@@ -1,0 +1,2409 @@
+-- =====================================================
+-- ENHANCED UNIVERSITY DATABASE MANAGEMENT SYSTEM
+-- GPA Scale: 0.0 - 4.3 (A+ = 4.3, A = 4.0, A- = 3.7, etc.)
+-- =====================================================
+
+
+PRAGMA foreign_keys = ON;
+PRAGMA recursive_triggers = ON;
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+
+-- =====================================================
+-- SYSTEM MODE CONFIGURATION
+-- =====================================================
+CREATE TABLE IF NOT EXISTS SystemMode (
+    ModeID INTEGER PRIMARY KEY CHECK (ModeID = 1),
+    Environment TEXT DEFAULT 'PRODUCTION' CHECK(Environment IN ('DEVELOPMENT', 'TESTING', 'PRODUCTION')),
+    StrictMode BOOLEAN DEFAULT 1,
+    AllowTestData BOOLEAN DEFAULT 0,
+    DebugLogging BOOLEAN DEFAULT 0,
+    LastChanged TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO SystemMode (ModeID, Environment, StrictMode) VALUES (1, 'PRODUCTION', 1);
+
+-- =====================================================
+-- CONFIGURATION & SETTINGS TABLE
+-- =====================================================
+CREATE TABLE IF NOT EXISTS SystemSettings (
+    SettingKey TEXT PRIMARY KEY,
+    SettingValue TEXT NOT NULL,
+    Description TEXT,
+    Category TEXT,
+    LastModified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ModifiedBy TEXT DEFAULT 'SYSTEM'
+);
+INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue, Description, Category) VALUES
+    ('MAX_SECTIONS_PER_TEACHER', '4', 'Maximum active sections a teacher can teach per semester', 'Academic'),
+    ('MAX_CREDITS_PER_SEMESTER', '18', 'Maximum credits a student can take per semester', 'Academic'),
+    ('MIN_ATTENDANCE_PERCENT', '75', 'Minimum attendance required for enrollment', 'Academic'),
+    ('GPA_PROBATION_THRESHOLD', '2.0', 'GPA below this triggers academic probation', 'Academic'),
+    ('GPA_GOOD_STANDING', '2.5', 'GPA required for good academic standing', 'Academic'),
+    ('GPA_HONOR_THRESHOLD', '3.5', 'GPA above this qualifies for honors', 'Academic'),
+    ('GPA_SCHOLARSHIP_THRESHOLD', '3.9', 'GPA required for scholarship renewal', 'Academic'),
+    ('GPA_WARNING_THRESHOLD', '2.5', 'GPA below this triggers academic warning', 'Academic'),
+    ('LATE_FEE_PERCENTAGE', '5.0', 'Percentage of fee amount charged as late fee', 'Finance'),
+    ('GRADE_LOCK_DAYS', '30', 'Days after completion when grades become locked', 'Academic'),
+    ('AUDIT_RETENTION_DAYS', '730', 'Days to keep audit log entries (2 years)', 'System'),
+    ('MAX_RECURSION_DEPTH', '20', 'Maximum recursion depth for recursive queries', 'System'),
+    ('WAITLIST_ENABLED', 'true', 'Enable waitlist functionality for full sections', 'Academic'),
+    ('CROSS_DEPT_ENROLLMENT', 'true', 'Allow students to enroll in courses outside their department', 'Academic'),
+    ('AUTO_ARCHIVE_YEARS', '5', 'Years after which completed sections are auto-archived', 'System'),
+    ('ATTENDANCE_WARNING_PERCENT', '75', 'Attendance below this triggers warning', 'Academic'),
+    ('ATTENDANCE_CRITICAL_PERCENT', '50', 'Attendance below this blocks enrollment', 'Academic'),
+    ('MAX_TEACHER_WORKLOAD_HOURS', '40', 'Maximum weekly teaching hours per teacher', 'Academic'),
+    ('SCHOLARSHIP_GPA_THRESHOLD', '3.5', 'Minimum GPA for scholarship eligibility', 'Finance'),
+    ('GRADUATION_MIN_GPA', '2.0', 'Minimum GPA required for graduation', 'Academic'),
+    ('DEFAULT_RETIREMENT_AGE', '65', 'Default retirement age for teachers', 'HR'),
+    ('MAX_WAITLIST_SIZE', '20', 'Maximum students on waitlist per section', 'Academic'),
+    ('SEMESTER_START_MONTH_FALL', '9', 'Month when Fall semester starts (1-12)', 'Academic'),
+    ('SEMESTER_START_MONTH_SPRING', '1', 'Month when Spring semester starts (1-12)', 'Academic'),
+    ('SEMESTER_START_MONTH_SUMMER', '6', 'Month when Summer semester starts (1-12)', 'Academic'),
+    ('ADD_DROP_DAYS', '14', 'Number of days after term start to add/drop courses', 'Academic'),
+    ('INACTIVE_USER_DAYS', '90', 'Days after which inactive users are auto-deactivated', 'Security'),
+    ('MAX_SECTIONS_PER_STUDENT', '6', 'Maximum sections a student can take per semester', 'Academic'),
+    ('PROBATION_WARNING_DAYS', '30', 'Days before automatic revocation for probation', 'Academic'),
+    ('NOTIFICATION_RETENTION_DAYS', '365', 'Days to keep notifications', 'System'),
+    ('MAX_STUDENT_ASSESSMENT_SCORE', '100', 'Maximum allowed score for student assessments', 'Academic'),
+    ('GRADE_CHANGE_ALERT_THRESHOLD', '30', 'Grade change percentage that triggers security alert', 'Security'),
+    ('RAPID_GRADE_CHANGE_HOURS', '1', 'Hours window for detecting rapid grade changes', 'Security'),
+    ('RAPID_GRADE_CHANGE_COUNT', '2', 'Number of rapid changes to trigger alert', 'Security'),
+    ('SCHOLARSHIP_REVIEW_DAYS', '30', 'Days to review scholarship before revocation', 'Finance'),
+    ('WAITLIST_OFFER_HOURS', '48', 'Hours a waitlist offer remains valid', 'Academic'),
+    ('PREREQ_GRACE_DAYS', '14', 'Days into term when prerequisites must be satisfied', 'Academic');
+
+-- =====================================================
+-- TRIGGER CONTROL (Centralized)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS TriggerControl (
+    ControlID INTEGER PRIMARY KEY CHECK (ControlID = 1),
+    TriggersEnabled BOOLEAN DEFAULT 1,
+    MaintenanceMode BOOLEAN DEFAULT 0,
+    BulkOperationMode BOOLEAN DEFAULT 0,
+    LastUpdated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO TriggerControl (ControlID, TriggersEnabled) VALUES (1, 1);
+
+-- =====================================================
+-- NOTIFICATION SYSTEM
+-- =====================================================
+CREATE TABLE IF NOT EXISTS Notification (
+    NotificationID INTEGER PRIMARY KEY AUTOINCREMENT,
+    UserID INTEGER NOT NULL,
+    UserType TEXT CHECK(UserType IN ('Student', 'Teacher', 'Admin', 'Registrar', 'Finance')),
+    NotificationType TEXT CHECK(NotificationType IN ('WaitlistOffer', 'Enrollment', 'GradePosted', 'FeeDue',
+                                                      'ScholarshipStatus', 'AcademicWarning', 'AttendanceWarning',
+                                                      'SectionCancelled', 'SystemAlert')),
+    Title TEXT NOT NULL,
+    Message TEXT NOT NULL,
+    Priority TEXT DEFAULT 'Normal' CHECK(Priority IN ('Low', 'Normal', 'High', 'Urgent')),
+    IsRead BOOLEAN DEFAULT 0,
+    IsActionRequired BOOLEAN DEFAULT 0,
+    ActionURL TEXT,
+    ExpiresAt TIMESTAMP,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ReadAt TIMESTAMP
+);
+
+-- =====================================================
+-- ACADEMIC TERM TABLE
+-- =====================================================
+CREATE TABLE IF NOT EXISTS AcademicTerm (
+    TermID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Semester TEXT NOT NULL CHECK(Semester IN ('Fall', 'Spring', 'Summer')),
+    AcademicYear TEXT NOT NULL CHECK(
+        AcademicYear GLOB '[1-2][0-9][0-9][0-9]-[1-2][0-9][0-9][0-9]'
+    ),
+    StartDate DATE NOT NULL,
+    EndDate DATE NOT NULL,
+    AddDropDeadline DATE NOT NULL,
+    RegistrationStart DATE,
+    RegistrationEnd DATE,
+    FinalExamStart DATE,
+    FinalExamEnd DATE,
+    IsCurrent BOOLEAN DEFAULT 0,
+    IsActive BOOLEAN DEFAULT 1,
+    IsArchived BOOLEAN DEFAULT 0,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(Semester, AcademicYear)
+);
+
+-- =====================================================
+-- PERMISSIONS & RBAC TABLES
+-- =====================================================
+CREATE TABLE IF NOT EXISTS Permission (
+    PermissionID INTEGER PRIMARY KEY AUTOINCREMENT,
+    PermissionName TEXT UNIQUE NOT NULL,
+    ResourceType TEXT NOT NULL,
+    Action TEXT NOT NULL CHECK(Action IN ('CREATE', 'READ', 'UPDATE', 'DELETE', 'ALL')),
+    Description TEXT
+);
+CREATE TABLE IF NOT EXISTS RolePermission (
+    RolePermissionID INTEGER PRIMARY KEY AUTOINCREMENT,
+    RoleName TEXT NOT NULL CHECK(RoleName IN ('Admin', 'Registrar', 'Teacher', 'Student', 'Finance', 'Auditor')),
+    PermissionID INTEGER NOT NULL,
+    GrantedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    GrantedBy TEXT DEFAULT 'SYSTEM',
+    FOREIGN KEY (PermissionID) REFERENCES Permission(PermissionID) ON DELETE CASCADE,
+    UNIQUE(RoleName, PermissionID)
+);
+INSERT OR IGNORE INTO Permission (PermissionName, ResourceType, Action) VALUES
+    ('STUDENT_READ', 'Student', 'READ'),
+    ('STUDENT_WRITE', 'Student', 'UPDATE'),
+    ('STUDENT_CREATE', 'Student', 'CREATE'),
+    ('STUDENT_DELETE', 'Student', 'DELETE'),
+    ('ENROLLMENT_READ', 'Enrollment', 'READ'),
+    ('ENROLLMENT_WRITE', 'Enrollment', 'UPDATE'),
+    ('ENROLLMENT_CREATE', 'Enrollment', 'CREATE'),
+    ('GRADE_WRITE', 'Grade', 'UPDATE'),
+    ('FEE_READ', 'Fee', 'READ'),
+    ('FEE_WRITE', 'Fee', 'UPDATE'),
+    ('REPORT_VIEW', 'Report', 'READ'),
+    ('AUDIT_VIEW', 'AuditLog', 'READ');
+
+-- =====================================================
+-- DATABASE VERSION & METADATA TABLE
+-- =====================================================
+CREATE TABLE IF NOT EXISTS DatabaseVersion (
+    VersionID INTEGER PRIMARY KEY,
+    VersionNumber TEXT NOT NULL,
+    ReleaseDate DATE NOT NULL,
+    AppliedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    Notes TEXT,
+    MigrationScript TEXT
+);
+INSERT INTO DatabaseVersion (VersionID, VersionNumber, ReleaseDate, Notes, MigrationScript)
+VALUES (1, '1', '2026-04-14', 'version 1');
+
+-- =====================================================
+-- USER MANAGEMENT
+-- =====================================================
+CREATE TABLE IF NOT EXISTS SystemUser (
+    UserID INTEGER PRIMARY KEY AUTOINCREMENT,
+    Username TEXT UNIQUE NOT NULL,
+    PasswordHash TEXT NOT NULL,
+    Email TEXT UNIQUE NOT NULL,
+    FullName TEXT NOT NULL,
+    Role TEXT CHECK(Role IN ('Admin', 'Registrar', 'Teacher', 'Student', 'Finance', 'Auditor')),
+    IsActive BOOLEAN DEFAULT 1,
+    LastLogin TIMESTAMP,
+    LastActivity TIMESTAMP,
+    FailedLoginAttempts INTEGER DEFAULT 0,
+    LockedUntil TIMESTAMP,
+    PasswordLastChanged TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PasswordExpiryDate TIMESTAMP DEFAULT (DATE('now', '+90 days')),
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    TwoFactorEnabled BOOLEAN DEFAULT 0,
+    TwoFactorSecret TEXT
+);
+CREATE TABLE IF NOT EXISTS SecurityAlert (
+    AlertID INTEGER PRIMARY KEY AUTOINCREMENT,
+    AlertType TEXT CHECK(AlertType IN ('FailedLogin', 'RapidGradeChange', 'SuspiciousPattern', 'UnauthorizedAccess', 'BulkDataAccess')),
+    UserID INTEGER,
+    Details TEXT,
+    DetectedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    Resolved BOOLEAN DEFAULT 0,
+    ResolvedBy TEXT,
+    ResolutionNotes TEXT
+);
+CREATE TABLE IF NOT EXISTS CurrentSession (
+    SessionID INTEGER PRIMARY KEY CHECK (SessionID = 1),
+    CurrentUser TEXT DEFAULT 'SYSTEM',
+    SessionStart TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    IPAddress TEXT,
+    UserAgent TEXT
+);
+INSERT OR IGNORE INTO CurrentSession (SessionID, CurrentUser) VALUES (1, 'SYSTEM');
+
+-- =====================================================
+-- ENHANCED AUDIT LOG (Tamper-proof)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS AuditLog (
+    LogID INTEGER PRIMARY KEY AUTOINCREMENT,
+    TableName TEXT NOT NULL,
+    RecordID INTEGER NOT NULL,
+    Action TEXT CHECK(Action IN ('INSERT', 'UPDATE', 'DELETE', 'SOFT_DELETE', 'WARNING', 'GRADE_RECALC', 'WAITLIST_PROMOTION')),
+    OldValue TEXT,
+    NewValue TEXT,
+    TriggerName TEXT NOT NULL,
+    ChangedBy TEXT DEFAULT 'SYSTEM',
+    ChangedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    IPAddress TEXT,
+    SessionID TEXT,
+    Checksum TEXT
+);
+CREATE TRIGGER prevent_auditlog_modification BEFORE UPDATE ON AuditLog
+BEGIN SELECT RAISE(ABORT, 'AuditLog records cannot be modified - they are immutable'); END;
+CREATE TRIGGER prevent_auditlog_deletion BEFORE DELETE ON AuditLog
+BEGIN SELECT RAISE(ABORT, 'AuditLog records cannot be deleted - they are immutable'); END;
+
+CREATE TABLE IF NOT EXISTS TriggerErrorLog (
+    ErrorID INTEGER PRIMARY KEY AUTOINCREMENT,
+    TriggerName TEXT NOT NULL,
+    TableName TEXT,
+    RecordID INTEGER,
+    ErrorMessage TEXT,
+    ErrorTimestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    Resolved BOOLEAN DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS GradeHistory (
+    GradeHistoryID INTEGER PRIMARY KEY AUTOINCREMENT,
+    EnrollmentID INTEGER NOT NULL,
+    OldNumericGrade DECIMAL(4,2),
+    NewNumericGrade DECIMAL(4,2),
+    OldLetterGrade TEXT,
+    NewLetterGrade TEXT,
+    ChangedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ChangedBy TEXT DEFAULT 'SYSTEM'
+);
+CREATE TRIGGER prevent_gradehistory_modification BEFORE UPDATE ON GradeHistory
+BEGIN SELECT RAISE(ABORT, 'GradeHistory records cannot be modified'); END;
+CREATE TRIGGER prevent_gradehistory_deletion BEFORE DELETE ON GradeHistory
+BEGIN SELECT RAISE(ABORT, 'GradeHistory records cannot be deleted'); END;
+
+-- Archive tables
+CREATE TABLE IF NOT EXISTS StudentArchive (
+    StudentID INTEGER PRIMARY KEY,
+    StudentNumber TEXT,
+    FirstName TEXT,
+    LastName TEXT,
+    NationalID TEXT,
+    Country TEXT,
+    DOB DATE,
+    Gender TEXT,
+    Email TEXT,
+    Phone TEXT,
+    Address TEXT,
+    EnrollmentDate DATE,
+    GraduationDate DATE,
+    FinalGPA DECIMAL(3,2),
+    ArchiveReason TEXT,
+    ArchivedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS CourseDeletionLog (
+    LogID INTEGER PRIMARY KEY AUTOINCREMENT,
+    CourseID INTEGER,
+    CourseCode TEXT,
+    DeletedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    DeletedBy TEXT DEFAULT 'SYSTEM'
+);
+CREATE TABLE IF NOT EXISTS ScholarshipHistory (
+    HistoryID INTEGER PRIMARY KEY AUTOINCREMENT,
+    ScholarshipID INTEGER,
+    StudentID INTEGER,
+    OldAmount DECIMAL(10,2),
+    NewAmount DECIMAL(10,2),
+    OldStatus TEXT,
+    NewStatus TEXT,
+    ChangedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS SectionArchive (
+    SectionID INTEGER PRIMARY KEY,
+    SectionCode TEXT,
+    SectionName TEXT,
+    Semester TEXT,
+    AcademicYear TEXT,
+    CourseID INTEGER,
+    TeacherID INTEGER,
+    RoomID INTEGER,
+    Schedule TEXT,
+    MaxCapacity INTEGER,
+    FinalEnrollment INTEGER,
+    ArchivedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ArchiveReason TEXT
+);
+
+-- =====================================================
+-- WAITLIST TABLE
+-- =====================================================
+CREATE TABLE IF NOT EXISTS Waitlist (
+    WaitlistID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    SectionID INTEGER NOT NULL,
+    Position INTEGER NOT NULL,
+    RequestedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    NotifiedAt TIMESTAMP,
+    Status TEXT DEFAULT 'Waiting' CHECK(Status IN ('Waiting', 'Offered', 'Enrolled', 'Expired', 'Cancelled')),
+    OfferedUntil TIMESTAMP
+);
+
+-- =====================================================
+-- STUDENT ACADEMIC STATUS TRACKING
+-- =====================================================
+CREATE TABLE IF NOT EXISTS StudentAcademicStatus (
+    StatusID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    TermID INTEGER,
+    Semester TEXT,
+    AcademicYear TEXT,
+    AcademicStanding TEXT CHECK(AcademicStanding IN ('Good Standing', 'Academic Probation', 'Academic Warning', 'Critical', 'Honors', 'Dean''s List')),
+    SemesterGPA DECIMAL(3,2),
+    CumulativeGPA DECIMAL(3,2),
+    CreditsAttempted INTEGER,
+    CreditsEarned INTEGER,
+    PerformanceFlag TEXT CHECK(PerformanceFlag IN ('Normal', 'At Risk', 'Critical', 'Honors')),
+    Notes TEXT,
+    RecordedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- STUDENT MAJOR/MINOR TRACKING
+-- =====================================================
+CREATE TABLE IF NOT EXISTS StudentMajor (
+    MajorID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    DepartmentID INTEGER NOT NULL,
+    MajorType TEXT CHECK(MajorType IN ('Primary', 'Minor', 'Double')),
+    DeclaredDate DATE DEFAULT CURRENT_DATE,
+    IsActive BOOLEAN DEFAULT 1,
+    UNIQUE(StudentID, DepartmentID, MajorType)
+);
+
+-- =====================================================
+-- 1. DEPARTMENT TABLE
+-- =====================================================
+CREATE TABLE Department (
+    DeptID INTEGER PRIMARY KEY AUTOINCREMENT,
+    DeptName TEXT NOT NULL UNIQUE,
+    DeptCode TEXT UNIQUE NOT NULL,
+    HeadTeacherID INTEGER NULL,
+    Budget DECIMAL(12,2) DEFAULT 0 CHECK(Budget >= 0),
+    BudgetUsed DECIMAL(12,2) DEFAULT 0 CHECK(BudgetUsed >= 0),
+    Location TEXT,
+    MaxStudentCapacity INTEGER DEFAULT 500 CHECK(MaxStudentCapacity > 0),
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    IsActive BOOLEAN DEFAULT 1,
+    IsDeleted BOOLEAN DEFAULT 0,
+    DeletedAt TIMESTAMP,
+    DeletedBy TEXT
+);
+
+-- =====================================================
+-- 2. TEACHER TABLE
+-- =====================================================
+CREATE TABLE Teacher (
+    TeacherID INTEGER PRIMARY KEY AUTOINCREMENT,
+    FirstName TEXT NOT NULL,
+    LastName TEXT NOT NULL,
+    NationalID TEXT UNIQUE,
+    DOB DATE,
+    Gender TEXT CHECK(Gender IN ('M', 'F', 'Other')),
+    Email TEXT UNIQUE NOT NULL,
+    Phone TEXT,
+    Address TEXT,
+    HireDate DATE,
+    YearsOfService DECIMAL(5,2) DEFAULT 0,
+    Qualification TEXT,
+    Specialization TEXT,
+    DepartmentID INTEGER,
+    Status TEXT DEFAULT 'Active' CHECK(Status IN ('Active', 'Inactive', 'On Leave', 'Retired')),
+    AverageTeachingRating DECIMAL(3,2) DEFAULT 0 CHECK(AverageTeachingRating >= 0 AND AverageTeachingRating <= 5),
+    RatingLastCalculated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    WeeklyWorkloadHours INTEGER DEFAULT 0,
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    RetirementAge INTEGER DEFAULT 65,
+    IsDeleted BOOLEAN DEFAULT 0,
+    DeletedAt TIMESTAMP,
+    DeletedBy TEXT,
+    FOREIGN KEY (DepartmentID) REFERENCES Department(DeptID) ON DELETE SET NULL
+);
+
+-- =====================================================
+-- 3. STUDENT TABLE
+-- =====================================================
+CREATE TABLE Student (
+    StudentID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentNumber TEXT UNIQUE NOT NULL,
+    FirstName TEXT NOT NULL,
+    LastName TEXT NOT NULL,
+    NationalID TEXT UNIQUE NOT NULL,
+    Country TEXT NOT NULL,
+    DOB DATE,
+    Gender TEXT CHECK(Gender IN ('M', 'F', 'Other')),
+    Email TEXT UNIQUE NOT NULL,
+    Phone TEXT,
+    Address TEXT,
+    DepartmentID INTEGER,
+    EnrollmentDate DATE DEFAULT CURRENT_DATE,
+    GraduationDate DATE,
+    CurrentSemester INTEGER DEFAULT 1 CHECK(CurrentSemester >= 1),
+    Status TEXT DEFAULT 'Active' CHECK(Status IN ('Active', 'Graduated', 'Suspended', 'Dropped', 'On Leave', 'Archived', 'Academic Probation', 'Academic Warning')),
+    CumulativeGPA DECIMAL(3,2) DEFAULT 0.0 CHECK(CumulativeGPA >= 0 AND CumulativeGPA <= 4.3),
+    SemesterGPA DECIMAL(3,2) DEFAULT 0.0,
+    TotalCreditsEarned INTEGER DEFAULT 0 CHECK(TotalCreditsEarned >= 0),
+    HasOutstandingFees BOOLEAN DEFAULT 0,
+    AcademicStanding TEXT DEFAULT 'Good Standing' CHECK(AcademicStanding IN ('Good Standing', 'Academic Probation', 'Academic Warning', 'Critical', 'Honors', 'Dean''s List')),
+    PerformanceFlag TEXT DEFAULT 'Normal' CHECK(PerformanceFlag IN ('Normal', 'At Risk', 'Critical', 'Honors')),
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    AttendancePercentage DECIMAL(5,2) DEFAULT 100.0,
+    GraduationThreshold INTEGER DEFAULT 120,
+    -- CurrentTermID removed in v9.6: derive via Enrollment -> Section -> AcademicTerm WHERE IsCurrent=1
+    IsDeleted BOOLEAN DEFAULT 0,
+    DeletedAt TIMESTAMP,
+    DeletedBy TEXT,
+    FOREIGN KEY (DepartmentID) REFERENCES Department(DeptID) ON DELETE SET NULL
+);
+
+-- =====================================================
+-- 4. COURSE TABLE
+-- =====================================================
+CREATE TABLE Course (
+    CourseID INTEGER PRIMARY KEY AUTOINCREMENT,
+    CourseCode TEXT UNIQUE NOT NULL,
+    CourseName TEXT NOT NULL,
+    Credits INTEGER CHECK(Credits > 0 AND Credits <= 6),
+    Description TEXT,
+    DepartmentID INTEGER NOT NULL,
+    IsActive BOOLEAN DEFAULT 1,
+    AverageGrade DECIMAL(5,2) DEFAULT 0,
+    SuccessRate DECIMAL(5,2) DEFAULT 0,
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    IsDeleted BOOLEAN DEFAULT 0,
+    DeletedAt TIMESTAMP,
+    DeletedBy TEXT,
+    FOREIGN KEY (DepartmentID) REFERENCES Department(DeptID) ON DELETE RESTRICT
+);
+
+-- =====================================================
+-- 5. COURSE PREREQUISITE TABLE
+-- =====================================================
+CREATE TABLE CoursePrerequisite (
+    PrerequisiteID INTEGER PRIMARY KEY AUTOINCREMENT,
+    CourseID INTEGER NOT NULL,
+    PrerequisiteCourseID INTEGER NOT NULL,
+    IsRequired BOOLEAN DEFAULT 1,
+    MinGradeRequired DECIMAL(4,2) DEFAULT 60.0 CHECK(MinGradeRequired >= 0 AND MinGradeRequired <= 100),
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (CourseID) REFERENCES Course(CourseID) ON DELETE CASCADE,
+    FOREIGN KEY (PrerequisiteCourseID) REFERENCES Course(CourseID) ON DELETE CASCADE,
+    UNIQUE(CourseID, PrerequisiteCourseID),
+    CHECK (CourseID != PrerequisiteCourseID)
+);
+
+-- =====================================================
+-- 6. CLASSROOM TABLE
+-- =====================================================
+CREATE TABLE Classroom (
+    RoomID INTEGER PRIMARY KEY AUTOINCREMENT,
+    RoomNumber TEXT UNIQUE NOT NULL,
+    Building TEXT NOT NULL,
+    Capacity INTEGER CHECK(Capacity > 0),
+    CurrentOccupancy INTEGER DEFAULT 0,
+    UtilizationRate DECIMAL(5,2) DEFAULT 0,
+    Type TEXT CHECK(Type IN ('Lecture', 'Lab', 'Library', 'Auditorium', 'Seminar')),
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM'
+);
+
+-- =====================================================
+-- 7. SECTION TABLE
+-- =====================================================
+CREATE TABLE Section (
+    SectionID INTEGER PRIMARY KEY AUTOINCREMENT,
+    SectionCode TEXT UNIQUE NOT NULL,
+    SectionName TEXT NOT NULL,
+    TermID INTEGER NOT NULL,
+    CourseID INTEGER NOT NULL,
+    TeacherID INTEGER,
+    RoomID INTEGER,
+    Schedule TEXT,
+    MaxCapacity INTEGER DEFAULT 40 CHECK(MaxCapacity > 0),
+    CurrentEnrollment INTEGER DEFAULT 0 CHECK(CurrentEnrollment >= 0),
+    FinalEnrollment INTEGER DEFAULT 0,
+    WaitlistCount INTEGER DEFAULT 0,
+    Status TEXT DEFAULT 'Active' CHECK(Status IN ('Active', 'Completed', 'Cancelled', 'Teacher On Leave', 'Teacher Unavailable', 'Teacher Retired')),
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    IsArchived BOOLEAN DEFAULT 0,
+    IsDeleted BOOLEAN DEFAULT 0,
+    DeletedAt TIMESTAMP,
+    DeletedBy TEXT,
+    FOREIGN KEY (CourseID) REFERENCES Course(CourseID) ON DELETE RESTRICT,
+    FOREIGN KEY (TeacherID) REFERENCES Teacher(TeacherID) ON DELETE SET NULL,
+    FOREIGN KEY (RoomID) REFERENCES Classroom(RoomID) ON DELETE SET NULL,
+    FOREIGN KEY (TermID) REFERENCES AcademicTerm(TermID)
+);
+
+-- =====================================================
+-- 8. ENROLLMENT TABLE
+-- =====================================================
+CREATE TABLE Enrollment (
+    EnrollmentID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    SectionID INTEGER NOT NULL,
+    EnrollmentDate DATE DEFAULT CURRENT_DATE,
+    CompletedDate DATE,
+    Status TEXT DEFAULT 'Enrolled' CHECK(Status IN ('Enrolled', 'Dropped', 'Completed', 'Withdrawn')),
+    NumericGrade DECIMAL(4,2) CHECK(NumericGrade >= 0 AND NumericGrade <= 100),
+    LetterGrade TEXT CHECK(LetterGrade IN ('A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F', 'W')),
+    GradePoints DECIMAL(3,2) CHECK(GradePoints >= 0 AND GradePoints <= 4.3),
+    GradeLocked BOOLEAN DEFAULT 0,
+    GradeLockDate DATE,
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    UNIQUE(StudentID, SectionID),
+    FOREIGN KEY (StudentID) REFERENCES Student(StudentID) ON DELETE RESTRICT,
+    FOREIGN KEY (SectionID) REFERENCES Section(SectionID) ON DELETE CASCADE
+);
+
+-- =====================================================
+-- 9. FEE TABLE
+-- =====================================================
+CREATE TABLE Fee (
+    FeeID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    TermID INTEGER,
+    FeeType TEXT CHECK(FeeType IN ('Tuition', 'Library', 'Lab', 'Sports', 'Student Union', 'Other')),
+    Amount DECIMAL(10,2) NOT NULL CHECK(Amount >= 0),
+    PaidAmount DECIMAL(10,2) DEFAULT 0,
+    DueDate DATE NOT NULL,
+    PaidDate DATE,
+    Status TEXT DEFAULT 'Pending' CHECK(Status IN ('Pending', 'Paid', 'Overdue', 'Waived', 'Partial')),
+    PaymentMethod TEXT CHECK(PaymentMethod IN ('Cash', 'Credit Card', 'Bank Transfer', 'Scholarship', 'Installment')),
+    LateFee DECIMAL(8,2) DEFAULT 0 CHECK(LateFee >= 0),
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    FOREIGN KEY (StudentID) REFERENCES Student(StudentID) ON DELETE RESTRICT,
+    FOREIGN KEY (TermID) REFERENCES AcademicTerm(TermID)
+);
+
+-- =====================================================
+-- 10. SCHOLARSHIP TABLE
+-- =====================================================
+CREATE TABLE Scholarship (
+    ScholarshipID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    TermID INTEGER,
+    ScholarshipName TEXT NOT NULL,
+    Amount DECIMAL(10,2) NOT NULL CHECK(Amount >= 0),
+    StartDate DATE,
+    EndDate DATE,
+    AwardDate DATE DEFAULT CURRENT_DATE,
+    RenewalDate DATE,
+    EligibilityStatus TEXT DEFAULT 'Active' CHECK(EligibilityStatus IN ('Active', 'Expired', 'Revoked', 'Renewed', 'Under Review')),
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    FOREIGN KEY (StudentID) REFERENCES Student(StudentID) ON DELETE CASCADE,
+    FOREIGN KEY (TermID) REFERENCES AcademicTerm(TermID)
+);
+
+-- =====================================================
+-- 11. ASSESSMENT & STUDENT ASSESSMENT TABLES
+-- =====================================================
+CREATE TABLE Assessment (
+    AssessmentID INTEGER PRIMARY KEY AUTOINCREMENT,
+    SectionID INTEGER NOT NULL,
+    AssessmentType TEXT CHECK(AssessmentType IN ('Exam', 'Quiz', 'Assignment', 'Project', 'Presentation', 'Participation', 'Final Exam')),
+    AssessmentName TEXT NOT NULL,
+    MaxScore DECIMAL(5,2) NOT NULL CHECK(MaxScore >= 1 AND MaxScore <= 100),
+    Weight DECIMAL(5,2) NOT NULL CHECK(Weight > 0),
+    DueDate DATE,
+    CreatedDate DATE DEFAULT CURRENT_DATE,
+    CreatedBy TEXT DEFAULT 'SYSTEM',
+    LastModifiedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastModifiedBy TEXT DEFAULT 'SYSTEM',
+    FOREIGN KEY (SectionID) REFERENCES Section(SectionID) ON DELETE CASCADE,
+    UNIQUE(SectionID, AssessmentName)
+);
+CREATE TABLE StudentAssessment (
+    StudentAssessmentID INTEGER PRIMARY KEY AUTOINCREMENT,
+    EnrollmentID INTEGER NOT NULL,
+    AssessmentID INTEGER NOT NULL,
+    Score DECIMAL(5,2) CHECK(Score >= 0),
+    DateRecorded DATE DEFAULT CURRENT_DATE,
+    UNIQUE(EnrollmentID, AssessmentID),
+    FOREIGN KEY (EnrollmentID) REFERENCES Enrollment(EnrollmentID) ON DELETE CASCADE,
+    FOREIGN KEY (AssessmentID) REFERENCES Assessment(AssessmentID) ON DELETE CASCADE
+);
+
+-- =====================================================
+-- 12. ATTENDANCE TABLE
+-- =====================================================
+CREATE TABLE Attendance (
+    AttendanceID INTEGER PRIMARY KEY AUTOINCREMENT,
+    StudentID INTEGER NOT NULL,
+    SectionID INTEGER NOT NULL,
+    Date DATE NOT NULL,
+    Status TEXT CHECK(Status IN ('Present', 'Absent', 'Late', 'Excused')),
+    Remarks TEXT,
+    UNIQUE(StudentID, SectionID, Date),
+    FOREIGN KEY (StudentID) REFERENCES Student(StudentID) ON DELETE CASCADE,
+    FOREIGN KEY (SectionID) REFERENCES Section(SectionID) ON DELETE CASCADE
+);
+
+-- =====================================================
+-- 13. TEACHER RATING TABLE
+-- =====================================================
+CREATE TABLE IF NOT EXISTS TeacherRating (
+    RatingID INTEGER PRIMARY KEY AUTOINCREMENT,
+    TeacherID INTEGER NOT NULL,
+    StudentID INTEGER NOT NULL,
+    TermID INTEGER NOT NULL,
+    Rating DECIMAL(3,2) NOT NULL CHECK(Rating >= 0 AND Rating <= 5),
+    Review TEXT,
+    RatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (TeacherID) REFERENCES Teacher(TeacherID) ON DELETE CASCADE,
+    FOREIGN KEY (StudentID) REFERENCES Student(StudentID) ON DELETE CASCADE,
+    FOREIGN KEY (TermID) REFERENCES AcademicTerm(TermID),
+    UNIQUE(TeacherID, StudentID, TermID)
+);
+
+-- =====================================================
+-- 14. REQUIRED COURSES FOR GRADUATION
+-- =====================================================
+CREATE TABLE IF NOT EXISTS CourseRequired (
+    RequiredID INTEGER PRIMARY KEY AUTOINCREMENT,
+    DepartmentID INTEGER NOT NULL,
+    CourseID INTEGER NOT NULL,
+    FOREIGN KEY (DepartmentID) REFERENCES Department(DeptID),
+    FOREIGN KEY (CourseID) REFERENCES Course(CourseID),
+    UNIQUE(DepartmentID, CourseID)
+);
+
+-- =====================================================
+-- PERFORMANCE INDEXES (All indexes after tables)
+-- =====================================================
+CREATE INDEX IF NOT EXISTS idx_notification_user_read ON Notification(UserID, IsRead, CreatedAt);
+CREATE INDEX IF NOT EXISTS idx_notification_expiry ON Notification(ExpiresAt);
+CREATE INDEX IF NOT EXISTS idx_notification_cleanup ON Notification(CreatedAt, IsRead);
+CREATE INDEX IF NOT EXISTS idx_enrollment_student ON Enrollment(StudentID);
+CREATE INDEX IF NOT EXISTS idx_enrollment_section ON Enrollment(SectionID);
+CREATE INDEX IF NOT EXISTS idx_enrollment_status ON Enrollment(Status);
+CREATE INDEX IF NOT EXISTS idx_section_course ON Section(CourseID);
+CREATE INDEX IF NOT EXISTS idx_section_teacher ON Section(TeacherID);
+CREATE INDEX IF NOT EXISTS idx_section_room ON Section(RoomID);
+CREATE INDEX IF NOT EXISTS idx_section_term ON Section(TermID);
+CREATE INDEX IF NOT EXISTS idx_attendance_student ON Attendance(StudentID);
+CREATE INDEX IF NOT EXISTS idx_fee_student ON Fee(StudentID);
+CREATE INDEX IF NOT EXISTS idx_fee_term ON Fee(TermID);
+CREATE INDEX IF NOT EXISTS idx_scholarship_student ON Scholarship(StudentID);
+CREATE INDEX IF NOT EXISTS idx_scholarship_term ON Scholarship(TermID);
+CREATE INDEX IF NOT EXISTS idx_auditlog_table_record ON AuditLog(TableName, RecordID);
+CREATE INDEX IF NOT EXISTS idx_auditlog_changedat ON AuditLog(ChangedAt);
+CREATE INDEX IF NOT EXISTS idx_student_status_gpa ON Student(Status, CumulativeGPA);
+CREATE INDEX IF NOT EXISTS idx_waitlist_position ON Waitlist(SectionID, Position);
+CREATE INDEX IF NOT EXISTS idx_student_academic_status ON StudentAcademicStatus(StudentID, TermID);
+CREATE INDEX IF NOT EXISTS idx_academic_term_current ON AcademicTerm(IsCurrent);
+CREATE INDEX IF NOT EXISTS idx_enrollment_completed ON Enrollment(StudentID, Status, CompletedDate);
+CREATE INDEX IF NOT EXISTS idx_teacher_dept ON Teacher(DepartmentID, Status);
+CREATE INDEX IF NOT EXISTS idx_course_dept ON Course(DepartmentID, IsActive);
+CREATE INDEX IF NOT EXISTS idx_section_status_term ON Section(Status, TermID);
+CREATE INDEX IF NOT EXISTS idx_waitlist_section_status ON Waitlist(SectionID, Status);
+CREATE INDEX IF NOT EXISTS idx_enrollment_student_section ON Enrollment(StudentID, SectionID);
+CREATE INDEX IF NOT EXISTS idx_waitlist_section_position ON Waitlist(SectionID, Position, Status);
+CREATE INDEX IF NOT EXISTS idx_studentassessment_enrollment ON StudentAssessment(EnrollmentID);
+CREATE INDEX IF NOT EXISTS idx_studentassessment_assessment ON StudentAssessment(AssessmentID);
+CREATE INDEX IF NOT EXISTS idx_notification_user_priority ON Notification(UserID, Priority, IsRead);
+
+-- =====================================================
+-- ENHANCED VIEWS FOR REPORTING
+-- =====================================================
+
+CREATE VIEW UnifiedStudentProfile AS
+SELECT
+    s.StudentID,
+    s.StudentNumber,
+    s.FirstName || ' ' || s.LastName AS StudentName,
+    s.Email,
+    s.Country,
+    s.DepartmentID,
+    d.DeptName AS DepartmentName,
+    s.CurrentSemester,
+    s.CumulativeGPA,
+    s.SemesterGPA,
+    s.TotalCreditsEarned,
+    s.AttendancePercentage,
+    s.AcademicStanding,
+    s.PerformanceFlag,
+    s.HasOutstandingFees,
+    CASE
+        WHEN s.CumulativeGPA >= 3.5 THEN 'Eligible for Honors'
+        WHEN s.CumulativeGPA >= 3.0 AND s.TotalCreditsEarned >= 60 THEN 'Good Academic Progress'
+        WHEN s.CumulativeGPA < 2.0 THEN 'Academic Intervention Required'
+        ELSE 'Satisfactory'
+    END AS AcademicAdvice
+FROM Student s
+LEFT JOIN Department d ON s.DepartmentID = d.DeptID
+WHERE s.IsDeleted = 0;
+
+CREATE VIEW TopStudentsByGPA AS
+SELECT
+    StudentNumber,
+    FirstName || ' ' || LastName AS StudentName,
+    CumulativeGPA,
+    SemesterGPA,
+    TotalCreditsEarned,
+    AcademicStanding,
+    PerformanceFlag,
+    DepartmentID
+FROM Student
+WHERE Status IN ('Active', 'Academic Probation') AND CumulativeGPA > 0
+ORDER BY CumulativeGPA DESC
+LIMIT 10;
+
+CREATE VIEW UnderEnrolledSections AS
+SELECT
+    s.SectionCode,
+    c.CourseCode,
+    c.CourseName,
+    at.Semester,
+    at.AcademicYear,
+    s.CurrentEnrollment,
+    s.MaxCapacity,
+    ROUND(100.0 * s.CurrentEnrollment / s.MaxCapacity, 2) AS FillRate,
+    cl.Capacity AS RoomCapacity
+FROM Section s
+JOIN Course c ON s.CourseID = c.CourseID
+JOIN AcademicTerm at ON s.TermID = at.TermID
+LEFT JOIN Classroom cl ON s.RoomID = cl.RoomID
+WHERE s.Status = 'Active'
+  AND s.CurrentEnrollment < s.MaxCapacity * 0.5
+ORDER BY FillRate ASC;
+
+CREATE VIEW TeacherWorkloadReport AS
+SELECT
+    t.TeacherID,
+    t.FirstName || ' ' || t.LastName AS TeacherName,
+    t.WeeklyWorkloadHours,
+    COUNT(DISTINCT s.SectionID) AS ActiveSections,
+    GROUP_CONCAT(DISTINCT c.CourseCode) AS CoursesTaught,
+    t.AverageTeachingRating,
+    CASE
+        WHEN t.WeeklyWorkloadHours > (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'MAX_TEACHER_WORKLOAD_HOURS')
+        THEN 'Overloaded'
+        WHEN t.WeeklyWorkloadHours < 10 THEN 'Underutilized'
+        ELSE 'Optimal'
+    END AS WorkloadStatus
+FROM Teacher t
+LEFT JOIN Section s ON t.TeacherID = s.TeacherID AND s.Status = 'Active'
+LEFT JOIN Course c ON s.CourseID = c.CourseID
+WHERE t.Status = 'Active' AND t.IsDeleted = 0
+GROUP BY t.TeacherID
+ORDER BY WeeklyWorkloadHours DESC;
+
+CREATE VIEW CoursePopularityReport AS
+SELECT
+    c.CourseCode,
+    c.CourseName,
+    at.Semester,
+    at.AcademicYear,
+    COUNT(DISTINCT e.EnrollmentID) AS TotalEnrollments,
+    COUNT(DISTINCT CASE WHEN e.Status = 'Completed' THEN e.EnrollmentID END) AS CompletedCount,
+    ROUND(AVG(e.NumericGrade), 2) AS AverageGrade,
+    ROUND(100.0 * SUM(CASE WHEN e.NumericGrade >= 60 THEN 1 ELSE 0 END) / NULLIF(COUNT(e.EnrollmentID), 0), 2) AS SuccessRate,
+    RANK() OVER (PARTITION BY at.AcademicYear ORDER BY COUNT(DISTINCT e.EnrollmentID) DESC) AS PopularityRank
+FROM Course c
+JOIN Section s ON c.CourseID = s.CourseID
+JOIN AcademicTerm at ON s.TermID = at.TermID
+LEFT JOIN Enrollment e ON s.SectionID = e.SectionID
+WHERE c.IsDeleted = 0
+GROUP BY c.CourseCode, at.Semester, at.AcademicYear
+ORDER BY c.CourseCode, at.AcademicYear DESC, at.Semester DESC;
+
+CREATE VIEW GraduationAudit AS
+SELECT
+    s.StudentID,
+    s.StudentNumber,
+    s.FirstName || ' ' || s.LastName AS StudentName,
+    s.TotalCreditsEarned,
+    s.GraduationThreshold,
+    s.CumulativeGPA,
+    s.SemesterGPA,
+    s.HasOutstandingFees,
+    s.AcademicStanding,
+    (s.GraduationThreshold - s.TotalCreditsEarned) AS CreditsRemaining,
+    CASE
+        WHEN s.TotalCreditsEarned >= s.GraduationThreshold
+             AND s.CumulativeGPA >= (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GRADUATION_MIN_GPA')
+             AND s.HasOutstandingFees = 0
+             AND s.AcademicStanding NOT IN ('Academic Probation', 'Critical')
+        THEN 'Eligible for Graduation'
+        WHEN s.TotalCreditsEarned >= s.GraduationThreshold THEN 'Meets Credit Requirement - Check Other Conditions'
+        WHEN s.CumulativeGPA < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GRADUATION_MIN_GPA')
+        THEN 'GPA Requirement Not Met'
+        WHEN s.HasOutstandingFees = 1 THEN 'Outstanding Fees'
+        ELSE 'Not Eligible'
+    END AS GraduationEligibility,
+    CASE
+        WHEN s.CumulativeGPA < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GRADUATION_MIN_GPA')
+        THEN ROUND((SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GRADUATION_MIN_GPA') - s.CumulativeGPA, 2)
+        ELSE 0
+    END AS GPAShortfall,
+    (SELECT COUNT(*) FROM CourseRequired cr
+     WHERE cr.DepartmentID = s.DepartmentID
+     AND NOT EXISTS (
+         SELECT 1 FROM Enrollment e
+         JOIN Section sec ON e.SectionID = sec.SectionID
+         WHERE e.StudentID = s.StudentID
+           AND e.Status = 'Completed'
+           AND sec.CourseID = cr.CourseID
+     )) AS MissingRequiredCourses
+FROM Student s
+WHERE s.Status IN ('Active', 'Academic Probation', 'Academic Warning')
+  AND s.IsDeleted = 0;
+
+CREATE VIEW StudentRiskAssessment AS
+SELECT
+    s.StudentID,
+    s.StudentNumber,
+    s.FirstName || ' ' || s.LastName AS StudentName,
+    s.CumulativeGPA,
+    s.SemesterGPA,
+    s.AttendancePercentage,
+    s.AcademicStanding,
+    s.PerformanceFlag,
+    s.HasOutstandingFees,
+    CASE
+        WHEN s.TotalCreditsEarned = 0 THEN 'Low Risk'
+        WHEN s.CumulativeGPA < 2.0 AND s.AttendancePercentage < 75 THEN 'Critical Risk'
+        WHEN s.CumulativeGPA < 2.0 OR s.AttendancePercentage < 75 THEN 'High Risk'
+        WHEN s.CumulativeGPA < 2.5 OR s.HasOutstandingFees = 1 OR s.PerformanceFlag = 'At Risk' THEN 'Moderate Risk'
+        ELSE 'Low Risk'
+    END AS RiskLevel,
+    CASE
+        WHEN s.TotalCreditsEarned = 0 THEN 'New student – no assessment yet'
+        WHEN s.CumulativeGPA < 2.0 AND s.AttendancePercentage < 75
+        THEN 'Immediate academic intervention and attendance counseling required'
+        WHEN s.CumulativeGPA < 2.0
+        THEN 'Academic probation - mandatory advisor meeting'
+        WHEN s.AttendancePercentage < 75
+        THEN 'Attendance warning - required to improve attendance'
+        WHEN s.HasOutstandingFees = 1
+        THEN 'Financial hold - clear fees before next registration'
+        ELSE 'Continue monitoring'
+    END AS Recommendation,
+    (SELECT COUNT(*) FROM Enrollment e WHERE e.StudentID = s.StudentID AND e.Status = 'Withdrawn') AS WithdrawnCoursesCount,
+    (SELECT COUNT(*) FROM Notification n
+     WHERE n.UserID = (SELECT UserID FROM SystemUser WHERE Username = 'STU_' || s.StudentNumber)
+     AND n.IsRead = 0 AND n.Priority IN ('High', 'Urgent')) AS PendingAlerts
+FROM Student s
+WHERE s.Status IN ('Active', 'Academic Probation', 'Academic Warning')
+  AND s.IsDeleted = 0
+ORDER BY
+    CASE RiskLevel
+        WHEN 'Critical Risk' THEN 1
+        WHEN 'High Risk' THEN 2
+        WHEN 'Moderate Risk' THEN 3
+        ELSE 4
+    END;
+
+CREATE VIEW WaitlistStatus AS
+SELECT
+    w.SectionID,
+    s.SectionCode,
+    c.CourseCode,
+    c.CourseName,
+    COUNT(w.WaitlistID) AS WaitlistCount,
+    s.MaxCapacity,
+    s.CurrentEnrollment,
+    s.MaxCapacity - s.CurrentEnrollment AS AvailableSpots,
+    (SELECT MIN(Position) FROM Waitlist WHERE SectionID = w.SectionID AND Status = 'Waiting') AS NextPosition,
+    (SELECT StudentID FROM Waitlist WHERE SectionID = w.SectionID AND Position = (SELECT MIN(Position) FROM Waitlist WHERE SectionID = w.SectionID AND Status = 'Waiting') LIMIT 1) AS NextStudentID,
+    MAX(CASE WHEN w.Status = 'Offered' THEN 1 ELSE 0 END) AS HasActiveOffer
+FROM Waitlist w
+JOIN Section s ON w.SectionID = s.SectionID
+JOIN Course c ON s.CourseID = c.CourseID
+GROUP BY w.SectionID, s.SectionCode, c.CourseCode, c.CourseName, s.MaxCapacity, s.CurrentEnrollment;
+
+CREATE VIEW TeacherPerformanceTrends AS
+SELECT
+    t.TeacherID,
+    t.FirstName || ' ' || t.LastName AS TeacherName,
+    at.AcademicYear,
+    at.Semester,
+    COUNT(DISTINCT e.EnrollmentID) AS TotalStudents,
+    ROUND(AVG(e.NumericGrade), 2) AS AvgClassGrade,
+    ROUND(100.0 * SUM(CASE WHEN e.NumericGrade >= 60 THEN 1 ELSE 0 END) / NULLIF(COUNT(e.EnrollmentID), 0), 2) AS PassRate,
+    t.AverageTeachingRating AS StudentRating,
+    ROUND(100.0 * SUM(CASE WHEN a.Status IN ('Present', 'Late') THEN 1 ELSE 0 END) / NULLIF(COUNT(a.AttendanceID), 0), 2) AS AvgAttendanceRate
+FROM Teacher t
+JOIN Section s ON t.TeacherID = s.TeacherID
+JOIN AcademicTerm at ON s.TermID = at.TermID
+LEFT JOIN Enrollment e ON s.SectionID = e.SectionID AND e.Status = 'Completed'
+LEFT JOIN Attendance a ON s.SectionID = a.SectionID
+WHERE t.IsDeleted = 0
+GROUP BY t.TeacherID, at.TermID
+ORDER BY t.TeacherID, at.AcademicYear DESC,
+    CASE at.Semester WHEN 'Fall' THEN 3 WHEN 'Spring' THEN 2 WHEN 'Summer' THEN 1 END DESC;
+
+-- =====================================================
+-- MATERIALIZED VIEWS
+-- =====================================================
+CREATE TABLE IF NOT EXISTS DepartmentPerformanceSummary (
+    DeptID INTEGER PRIMARY KEY,
+    DeptName TEXT,
+    TotalStudents INTEGER,
+    TotalCourses INTEGER,
+    AvgStudentGPA DECIMAL(3,2),
+    GraduationRate DECIMAL(5,2),
+    TotalBudgetUsed DECIMAL(12,2),
+    LastUpdated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS MaterializedStudentGPAReport (
+    StudentID INTEGER PRIMARY KEY,
+    StudentNumber TEXT,
+    StudentName TEXT,
+    Country TEXT,
+    CurrentSemester INTEGER,
+    CumulativeGPA DECIMAL(3,2),
+    SemesterGPA DECIMAL(3,2),
+    TotalCreditsEarned INTEGER,
+    CompletedCourses INTEGER,
+    HasOutstandingFees BOOLEAN,
+    PerformanceFlag TEXT,
+    LastRefreshed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- HELPER: Safe AuditLog insert function
+-- =====================================================
+-- Helper function to safely insert audit log entries
+-- Usage: SELECT audit_log('TableName', RecordID, 'ACTION', 'Old', 'New', 'TriggerName', 'ChangedBy');
+
+-- =====================================================
+-- TRIGGERS (All Consolidated & Working)
+-- =====================================================
+
+-- =====================================================
+-- AcademicTerm Triggers
+-- =====================================================
+
+-- Trigger: Ensure at least one current term exists & enforce single current term
+CREATE TRIGGER academic_term_after_insert
+AFTER INSERT ON AcademicTerm
+BEGIN
+    UPDATE AcademicTerm
+    SET IsCurrent = 1
+    WHERE TermID = NEW.TermID
+    AND DATE('now') BETWEEN StartDate AND EndDate
+    AND (SELECT COUNT(*) FROM AcademicTerm WHERE IsCurrent = 1) = 0;
+
+    UPDATE AcademicTerm
+    SET IsCurrent = 1
+    WHERE TermID = (SELECT TermID FROM AcademicTerm WHERE StartDate <= DATE('now') ORDER BY StartDate DESC LIMIT 1)
+    AND (SELECT COUNT(*) FROM AcademicTerm WHERE IsCurrent = 1) = 0;
+END;
+
+-- Trigger: Enforce single current term on updates
+CREATE TRIGGER academic_term_before_update
+BEFORE UPDATE OF IsCurrent ON AcademicTerm
+WHEN NEW.IsCurrent = 1 AND OLD.IsCurrent = 0
+BEGIN
+    UPDATE AcademicTerm SET IsCurrent = 0 WHERE IsCurrent = 1 AND TermID != NEW.TermID;
+END;
+
+-- Trigger: Auto-archive old terms
+CREATE TRIGGER academic_term_auto_archive
+AFTER UPDATE ON AcademicTerm
+BEGIN
+    UPDATE AcademicTerm
+    SET IsArchived = 1, IsActive = 0
+    WHERE EndDate < DATE('now', '-90 days') AND IsArchived = 0;
+END;
+
+-- =====================================================
+-- Department Triggers
+-- =====================================================
+
+-- Trigger: Enforce budget constraint
+CREATE TRIGGER dept_budget_hard_stop
+BEFORE UPDATE OF BudgetUsed ON Department
+WHEN NEW.BudgetUsed > NEW.Budget
+BEGIN
+    SELECT RAISE(ABORT, 'Budget would be exceeded. Current Budget: ' || NEW.Budget || ', Attempted Used: ' || NEW.BudgetUsed);
+END;
+
+-- Trigger: Cascading soft delete for departments
+CREATE TRIGGER dept_cascading_soft_delete
+BEFORE UPDATE OF IsDeleted ON Department
+WHEN NEW.IsDeleted = 1 AND OLD.IsDeleted = 0
+BEGIN
+    UPDATE Course SET IsDeleted = 1, IsActive = 0, DeletedAt = CURRENT_TIMESTAMP, DeletedBy = NEW.DeletedBy
+    WHERE DepartmentID = OLD.DeptID AND IsDeleted = 0;
+
+    UPDATE Student SET IsDeleted = 1, Status = 'Archived', DeletedAt = CURRENT_TIMESTAMP, DeletedBy = NEW.DeletedBy
+    WHERE DepartmentID = OLD.DeptID AND IsDeleted = 0 AND Status IN ('Active', 'Academic Probation', 'Academic Warning');
+
+    UPDATE Department SET HeadTeacherID = NULL WHERE DeptID = OLD.DeptID;
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Department', OLD.DeptID, 'SOFT_DELETE', 'Active', 'Deleted',
+            'dept_cascading_soft_delete', NEW.DeletedBy);
+END;
+
+-- =====================================================
+-- Teacher Triggers
+-- =====================================================
+
+-- Trigger: Update workload after section insert
+CREATE TRIGGER teacher_after_section_insert
+AFTER INSERT ON Section
+WHEN (SELECT TriggersEnabled FROM TriggerControl WHERE ControlID = 1) = 1 AND NEW.TeacherID IS NOT NULL
+BEGIN
+    UPDATE Teacher
+    SET WeeklyWorkloadHours = (
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN s.Schedule LIKE '%Monday%' THEN 3
+                WHEN s.Schedule LIKE '%Tuesday%' THEN 3
+                WHEN s.Schedule LIKE '%Wednesday%' THEN 3
+                WHEN s.Schedule LIKE '%Thursday%' THEN 3
+                WHEN s.Schedule LIKE '%Friday%' THEN 3
+                ELSE 2
+            END
+        ), 0)
+        FROM Section s
+        WHERE s.TeacherID = Teacher.TeacherID AND s.Status = 'Active'
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE TeacherID = NEW.TeacherID;
+
+    SELECT CASE
+        WHEN (SELECT WeeklyWorkloadHours FROM Teacher WHERE TeacherID = NEW.TeacherID) >
+             (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'MAX_TEACHER_WORKLOAD_HOURS')
+        THEN RAISE(ABORT, 'Teacher weekly workload would exceed maximum allowed hours')
+    END;
+
+    SELECT CASE
+        WHEN (SELECT COUNT(*) FROM Section
+              WHERE TeacherID = NEW.TeacherID AND TermID = NEW.TermID AND Status != 'Completed') >
+             (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'MAX_SECTIONS_PER_TEACHER')
+        THEN RAISE(ABORT, 'Teacher cannot teach more than ' ||
+            (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'MAX_SECTIONS_PER_TEACHER') ||
+            ' active sections per semester')
+    END;
+
+    SELECT CASE
+        WHEN EXISTS (
+            SELECT 1 FROM Section s
+            JOIN Course c1 ON s.CourseID = c1.CourseID
+            JOIN Course c2 ON c2.CourseID = NEW.CourseID
+            WHERE s.TeacherID = NEW.TeacherID
+              AND s.TermID = NEW.TermID
+              AND s.Status != 'Completed'
+              AND c1.DepartmentID != c2.DepartmentID
+        ) THEN RAISE(ABORT, 'Teacher cannot teach sections in different departments in the same semester')
+    END;
+END;
+
+-- Trigger: Calculate years of service
+CREATE TRIGGER teacher_years_service
+AFTER INSERT ON Teacher
+BEGIN
+    UPDATE Teacher
+    SET YearsOfService = ROUND((JULIANDAY('now') - JULIANDAY(NEW.HireDate)) / 365.25, 2)
+    WHERE TeacherID = NEW.TeacherID;
+END;
+
+-- Trigger: Auto-retire teacher based on age
+CREATE TRIGGER teacher_auto_retire
+AFTER UPDATE OF DOB ON Teacher
+WHEN NEW.DOB IS NOT NULL AND (JULIANDAY('now') - JULIANDAY(NEW.DOB)) / 365.25 >= NEW.RetirementAge
+BEGIN
+    UPDATE Teacher SET Status = 'Retired', LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE TeacherID = NEW.TeacherID;
+END;
+
+-- Trigger: Update teacher rating average
+CREATE TRIGGER teacher_update_rating
+AFTER INSERT ON TeacherRating
+BEGIN
+    UPDATE Teacher
+    SET AverageTeachingRating = (
+        SELECT COALESCE(ROUND(AVG(Rating), 2), 0)
+        FROM TeacherRating
+        WHERE TeacherID = NEW.TeacherID
+    ),
+    RatingLastCalculated = CURRENT_TIMESTAMP
+    WHERE TeacherID = NEW.TeacherID;
+END;
+
+-- Trigger: Cascade teacher status to sections
+CREATE TRIGGER teacher_status_cascade
+AFTER UPDATE OF Status ON Teacher
+WHEN OLD.Status != NEW.Status
+BEGIN
+    UPDATE Section
+    SET Status = CASE
+        WHEN NEW.Status = 'On Leave' THEN 'Teacher On Leave'
+        WHEN NEW.Status = 'Inactive' THEN 'Teacher Unavailable'
+        WHEN NEW.Status = 'Retired' THEN 'Teacher Retired'
+        ELSE 'Active'
+    END
+    WHERE TeacherID = NEW.TeacherID;
+END;
+
+-- =====================================================
+-- Student Triggers
+-- =====================================================
+
+-- Trigger: Update student performance metrics
+CREATE TRIGGER student_performance_update
+AFTER UPDATE OF CumulativeGPA, AttendancePercentage, SemesterGPA ON Student
+WHEN (SELECT TriggersEnabled FROM TriggerControl WHERE ControlID = 1) = 1
+BEGIN
+    UPDATE Student
+    SET
+        AcademicStanding = CASE
+            WHEN NEW.CumulativeGPA >= 3.8 THEN 'Dean''s List'
+            WHEN NEW.CumulativeGPA >= 3.5 THEN 'Honors'
+            WHEN NEW.CumulativeGPA >= (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GPA_GOOD_STANDING') THEN 'Good Standing'
+            WHEN NEW.CumulativeGPA >= (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GPA_PROBATION_THRESHOLD') THEN 'Academic Warning'
+            ELSE 'Academic Probation'
+        END,
+        Status = CASE
+            WHEN NEW.AcademicStanding = 'Academic Probation' AND NEW.Status = 'Active' THEN 'Academic Probation'
+            WHEN NEW.AcademicStanding = 'Good Standing' AND NEW.Status IN ('Academic Probation', 'Academic Warning') THEN 'Active'
+            ELSE NEW.Status
+        END,
+        PerformanceFlag = CASE
+            WHEN NEW.CumulativeGPA >= (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GPA_HONOR_THRESHOLD')
+                 AND NEW.AttendancePercentage >= 90 THEN 'Honors'
+            WHEN NEW.CumulativeGPA < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GPA_PROBATION_THRESHOLD')
+                 OR NEW.AttendancePercentage < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'ATTENDANCE_CRITICAL_PERCENT') THEN 'Critical'
+            WHEN NEW.CumulativeGPA < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'GPA_WARNING_THRESHOLD')
+                 OR NEW.AttendancePercentage < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'ATTENDANCE_WARNING_PERCENT') THEN 'At Risk'
+            ELSE 'Normal'
+        END,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID;
+
+    INSERT INTO StudentAcademicStatus (StudentID, TermID, Semester, AcademicYear,
+                                       AcademicStanding, SemesterGPA, CumulativeGPA,
+                                       CreditsAttempted, CreditsEarned, PerformanceFlag)
+    SELECT
+        NEW.StudentID,
+        at.TermID,
+        at.Semester,
+        at.AcademicYear,
+        (SELECT AcademicStanding FROM Student WHERE StudentID = NEW.StudentID),
+        NEW.SemesterGPA,
+        NEW.CumulativeGPA,
+        (SELECT SUM(c.Credits) FROM Enrollment e
+         JOIN Section s ON e.SectionID = s.SectionID
+         JOIN Course c ON s.CourseID = c.CourseID
+         WHERE e.StudentID = NEW.StudentID AND e.Status IN ('Enrolled', 'Completed') AND s.TermID = at.TermID),
+        NEW.TotalCreditsEarned,
+        (SELECT PerformanceFlag FROM Student WHERE StudentID = NEW.StudentID)
+    FROM AcademicTerm at
+    WHERE at.IsCurrent = 1
+    LIMIT 1;
+END;
+
+-- Trigger: Calculate semester GPA and CUMULATIVE GPA on course completion
+-- FIX: The previous CumulativeGPA subquery only averaged the grades in the Enrollment
+-- table, completely ignoring credits earned BEFORE the current term (e.g. the student's
+-- existing 3.2 GPA over 30 credits stored in Student.CumulativeGPA /
+-- Student.TotalCreditsEarned).  This caused the trigger to replace the cumulative GPA
+-- with just the new course grade points (3.7) instead of the correct weighted average
+-- ((3.2*30 + 3.7*3)/33 = 3.2455).
+--
+-- The correct formula is:
+--   new_cumulative = ( old_gpa * old_credits + new_grade_points * course_credits )
+--                   / ( old_credits + course_credits )
+--
+-- We capture the BEFORE-update values via the OLD pseudo-row from the Enrollment update,
+-- then read the student's current (pre-update) CumulativeGPA and TotalCreditsEarned
+-- directly from the Student table before this trigger modifies them.
+CREATE TRIGGER student_semester_gpa_on_completion
+AFTER UPDATE OF Status ON Enrollment
+WHEN NEW.Status = 'Completed' AND OLD.Status != 'Completed'
+BEGIN
+    UPDATE Student
+    SET SemesterGPA = (
+            -- Weighted GPA for courses completed this term only
+            SELECT COALESCE(ROUND(SUM(e.GradePoints * c.Credits) / NULLIF(SUM(c.Credits), 0), 2), 0)
+            FROM Enrollment e
+            JOIN Section s ON e.SectionID = s.SectionID
+            JOIN Course c ON s.CourseID = c.CourseID
+            WHERE e.StudentID = NEW.StudentID
+              AND e.Status = 'Completed'
+              AND s.TermID = (SELECT TermID FROM AcademicTerm WHERE IsCurrent = 1 LIMIT 1)
+        ),
+        TotalCreditsEarned = TotalCreditsEarned + (
+            SELECT c.Credits FROM Section s JOIN Course c ON s.CourseID = c.CourseID
+            WHERE s.SectionID = NEW.SectionID
+        ),
+        CumulativeGPA = (
+            -- Weighted average: blend previous cumulative GPA with the newly completed course
+            SELECT COALESCE(
+                ROUND(
+                    (
+                        (st.CumulativeGPA * st.TotalCreditsEarned)
+                        +
+                        (NEW_GP.GradePoints * NEW_CR.Credits)
+                    )
+                    / NULLIF(st.TotalCreditsEarned + NEW_CR.Credits, 0),
+                    4
+                ),
+                0
+            )
+            FROM Student st
+            JOIN (SELECT GradePoints FROM Enrollment WHERE EnrollmentID = NEW.EnrollmentID) AS NEW_GP
+            JOIN (SELECT c.Credits FROM Section s JOIN Course c ON s.CourseID = c.CourseID WHERE s.SectionID = NEW.SectionID) AS NEW_CR
+            WHERE st.StudentID = NEW.StudentID
+        ),
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID;
+END;
+
+-- Trigger: Update attendance percentage
+CREATE TRIGGER student_attendance_update
+AFTER INSERT ON Attendance
+BEGIN
+    UPDATE Student
+    SET AttendancePercentage = (
+        SELECT ROUND(100.0 * SUM(CASE WHEN Status IN ('Present', 'Late') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2)
+        FROM Attendance WHERE StudentID = NEW.StudentID
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID;
+END;
+
+-- Trigger: Update outstanding fees flag on insert
+CREATE TRIGGER student_outstanding_fees_change
+AFTER INSERT ON Fee
+BEGIN
+    UPDATE Student
+    SET HasOutstandingFees = (
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM Fee WHERE StudentID = NEW.StudentID AND Status IN ('Pending', 'Overdue', 'Partial')
+        ) THEN 1 ELSE 0 END
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID;
+END;
+
+-- Trigger: Update outstanding fees flag on update
+CREATE TRIGGER student_outstanding_fees_update
+AFTER UPDATE OF Status, PaidAmount ON Fee
+BEGIN
+    UPDATE Student
+    SET HasOutstandingFees = (
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM Fee WHERE StudentID = NEW.StudentID AND Status IN ('Pending', 'Overdue', 'Partial')
+        ) THEN 1 ELSE 0 END
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID;
+END;
+
+-- Trigger: Update outstanding fees flag on delete
+CREATE TRIGGER student_outstanding_fees_delete
+AFTER DELETE ON Fee
+BEGIN
+    UPDATE Student
+    SET HasOutstandingFees = (
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM Fee WHERE StudentID = OLD.StudentID AND Status IN ('Pending', 'Overdue', 'Partial')
+        ) THEN 1 ELSE 0 END
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = OLD.StudentID;
+END;
+
+-- Trigger: Prevent changes to critical student identifiers
+CREATE TRIGGER prevent_student_identity_change
+BEFORE UPDATE OF StudentNumber, NationalID, Email ON Student
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot change StudentNumber, NationalID, or Email after creation');
+END;
+
+-- =====================================================
+-- Enrollment Validation Triggers (Ordered by priority)
+-- =====================================================
+
+-- Trigger: Check prerequisites with grace period for same-term enrollment
+-- FIX: Grace period is now checked against AddDropDeadline (DATE('now') <= AddDropDeadline)
+-- instead of julianday('now') - julianday(StartDate) <= PREREQ_GRACE_DAYS.
+-- The old formula failed for any term whose StartDate was more than 14 days ago
+-- (including the test term that started 2025-09-01), silently blocking the grace path
+-- and letting the outer EXISTS fall through without raising — so the INSERT succeeded
+-- even when it should have been blocked (Scenario A) AND the grace period never helped
+-- (Scenario B).  Using AddDropDeadline is semantically correct: the registrar controls
+-- exactly when same-term co-enrollment is allowed.
+CREATE TRIGGER enrollment_prerequisite_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN EXISTS (
+            SELECT 1 FROM Section s
+            JOIN Course c ON s.CourseID = c.CourseID
+            JOIN AcademicTerm t ON s.TermID = t.TermID
+            WHERE s.SectionID = NEW.SectionID
+            AND EXISTS (
+                SELECT 1 FROM CoursePrerequisite cp
+                WHERE cp.CourseID = c.CourseID
+                AND NOT EXISTS (
+                    -- Passed the prerequisite in a previous term
+                    SELECT 1 FROM Enrollment e_prev
+                    JOIN Section s_prev ON e_prev.SectionID = s_prev.SectionID
+                    JOIN Course c_prev ON s_prev.CourseID = c_prev.CourseID
+                    WHERE e_prev.StudentID = NEW.StudentID
+                      AND e_prev.Status = 'Completed'
+                      AND e_prev.NumericGrade >= cp.MinGradeRequired
+                      AND c_prev.CourseID = cp.PrerequisiteCourseID
+                )
+                AND NOT EXISTS (
+                    -- Grace period: currently enrolled in the prerequisite in the SAME term
+                    -- and the add/drop window is still open
+                    SELECT 1 FROM Enrollment e_current
+                    JOIN Section s_current ON e_current.SectionID = s_current.SectionID
+                    JOIN Course c_current ON s_current.CourseID = c_current.CourseID
+                    WHERE e_current.StudentID = NEW.StudentID
+                      AND e_current.Status = 'Enrolled'
+                      AND s_current.TermID = s.TermID
+                      AND c_current.CourseID = cp.PrerequisiteCourseID
+                      AND DATE('now') <= t.AddDropDeadline
+                )
+            )
+        ) THEN RAISE(ABORT, 'Student has not met the prerequisites for this course')
+    END;
+END;
+
+-- Trigger: Waitlist — Step 1: insert Waitlist row (runs first, alphabetically before _check)
+-- RAISE(ABORT) in a BEFORE trigger rolls back only the triggering INSERT, not sibling
+-- BEFORE triggers that already executed.  So we split into two triggers:
+--   enrollment_waitlist_add  — writes the Waitlist row (no RAISE)
+--   enrollment_waitlist_check — raises ABORT to cancel the Enrollment INSERT
+CREATE TRIGGER enrollment_waitlist_add
+BEFORE INSERT ON Enrollment
+WHEN (SELECT CAST(SettingValue AS TEXT) FROM SystemSettings WHERE SettingKey = 'WAITLIST_ENABLED') = 'true'
+AND NEW.Status = 'Enrolled'
+AND (SELECT CurrentEnrollment FROM Section WHERE SectionID = NEW.SectionID) >= (SELECT MaxCapacity FROM Section WHERE SectionID = NEW.SectionID)
+AND NOT EXISTS (SELECT 1 FROM Waitlist WHERE StudentID = NEW.StudentID AND SectionID = NEW.SectionID)
+BEGIN
+    INSERT INTO Waitlist (StudentID, SectionID, Position, Status)
+    VALUES (
+        NEW.StudentID,
+        NEW.SectionID,
+        COALESCE((SELECT MAX(Position) + 1 FROM Waitlist WHERE SectionID = NEW.SectionID), 1),
+        'Waiting'
+    );
+END;
+
+-- Trigger: Waitlist — Step 2: abort the enrollment (runs after _add)
+CREATE TRIGGER enrollment_waitlist_check
+BEFORE INSERT ON Enrollment
+WHEN (SELECT CAST(SettingValue AS TEXT) FROM SystemSettings WHERE SettingKey = 'WAITLIST_ENABLED') = 'true'
+AND NEW.Status = 'Enrolled'
+AND (SELECT CurrentEnrollment FROM Section WHERE SectionID = NEW.SectionID) >= (SELECT MaxCapacity FROM Section WHERE SectionID = NEW.SectionID)
+BEGIN
+    SELECT RAISE(ABORT, 'Section is full. Student has been added to waitlist at position ' ||
+        COALESCE(
+            (SELECT CAST(Position AS TEXT) FROM Waitlist
+             WHERE StudentID = NEW.StudentID AND SectionID = NEW.SectionID),
+            '1'
+        ));
+END;
+
+-- Trigger: Attendance check
+CREATE TRIGGER enrollment_attendance_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM Student WHERE StudentID = NEW.StudentID
+                     AND AttendancePercentage < (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'MIN_ATTENDANCE_PERCENT'))
+        THEN RAISE(ABORT, 'Cannot enroll student with attendance below ' ||
+            (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'MIN_ATTENDANCE_PERCENT') || '%')
+    END;
+END;
+
+-- Trigger: Critical performance flag check
+CREATE TRIGGER enrollment_critical_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM Student WHERE StudentID = NEW.StudentID AND PerformanceFlag = 'Critical')
+        THEN RAISE(ABORT, 'Student with Critical performance flag cannot enroll in new courses. Please contact academic advising.')
+    END;
+END;
+
+-- Trigger: Outstanding fees check (runs after waitlist)
+CREATE TRIGGER enrollment_fees_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM Student WHERE StudentID = NEW.StudentID AND HasOutstandingFees = 1)
+        THEN RAISE(ABORT, 'Cannot enroll student with outstanding fees')
+    END;
+END;
+
+-- Trigger: Max credits check
+CREATE TRIGGER enrollment_max_credits_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN (SELECT COALESCE(SUM(c.Credits), 0) FROM Enrollment e
+              JOIN Section s ON e.SectionID = s.SectionID
+              JOIN Course c ON s.CourseID = c.CourseID
+              WHERE e.StudentID = NEW.StudentID AND e.Status = 'Enrolled') +
+             (SELECT c.Credits FROM Section s JOIN Course c ON s.CourseID = c.CourseID WHERE s.SectionID = NEW.SectionID) >
+             (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'MAX_CREDITS_PER_SEMESTER')
+        THEN RAISE(ABORT, 'Cannot enroll: Would exceed maximum credits per semester (' ||
+            (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'MAX_CREDITS_PER_SEMESTER') || ' credits)')
+    END;
+END;
+
+-- Trigger: Max sections check
+CREATE TRIGGER enrollment_max_sections_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN (SELECT COUNT(*) FROM Enrollment e
+              JOIN Section s ON e.SectionID = s.SectionID
+              WHERE e.StudentID = NEW.StudentID
+                AND e.Status = 'Enrolled'
+                AND s.TermID = (SELECT TermID FROM AcademicTerm WHERE IsCurrent = 1 LIMIT 1)) >=
+             (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'MAX_SECTIONS_PER_STUDENT')
+        THEN RAISE(ABORT, 'Cannot enroll: Would exceed maximum sections per semester (' ||
+            (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'MAX_SECTIONS_PER_STUDENT') || ' sections)')
+    END;
+END;
+
+-- Trigger: Cross-department check
+CREATE TRIGGER enrollment_cross_dept_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+AND (SELECT CAST(SettingValue AS TEXT) FROM SystemSettings WHERE SettingKey = 'CROSS_DEPT_ENROLLMENT') = 'false'
+BEGIN
+    SELECT CASE
+        WHEN EXISTS (
+            SELECT 1 FROM Student s
+            JOIN Section sec ON sec.SectionID = NEW.SectionID
+            JOIN Course c ON sec.CourseID = c.CourseID
+            WHERE s.StudentID = NEW.StudentID AND s.DepartmentID != c.DepartmentID
+        ) THEN RAISE(ABORT, 'Cross-department enrollment is disabled for this system')
+    END;
+END;
+
+-- Trigger: Schedule conflict check
+CREATE TRIGGER enrollment_schedule_conflict_check
+BEFORE INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    SELECT CASE
+        WHEN EXISTS (
+            SELECT 1 FROM Enrollment e
+            JOIN Section s1 ON e.SectionID = s1.SectionID
+            JOIN Section s2 ON s2.SectionID = NEW.SectionID
+            WHERE e.StudentID = NEW.StudentID
+              AND e.Status = 'Enrolled'
+              AND s1.TermID = s2.TermID
+              AND s1.Schedule = s2.Schedule
+        ) THEN RAISE(ABORT, 'Student already has another section at the same time')
+    END;
+END;
+
+-- Trigger: Prevent drop after deadline
+CREATE TRIGGER prevent_drop_after_deadline
+BEFORE UPDATE OF Status ON Enrollment
+WHEN NEW.Status = 'Dropped' AND OLD.Status = 'Enrolled'
+AND EXISTS (
+    SELECT 1 FROM Section s
+    JOIN AcademicTerm t ON s.TermID = t.TermID
+    WHERE s.SectionID = OLD.SectionID
+    AND DATE('now') > t.AddDropDeadline
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot drop course after add/drop deadline');
+END;
+
+-- Trigger: Auto-archive terminal student statuses
+CREATE TRIGGER student_auto_archive_terminal
+AFTER UPDATE OF Status ON Student
+WHEN NEW.Status IN ('Graduated', 'Suspended', 'Dropped') AND OLD.Status NOT IN ('Graduated', 'Suspended', 'Dropped')
+BEGIN
+    INSERT INTO StudentArchive (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, DOB, Gender, Email, Phone, Address, EnrollmentDate, GraduationDate, FinalGPA, ArchiveReason)
+    VALUES (NEW.StudentID, NEW.StudentNumber, NEW.FirstName, NEW.LastName, NEW.NationalID, NEW.Country, NEW.DOB, NEW.Gender, NEW.Email, NEW.Phone, NEW.Address, NEW.EnrollmentDate, NEW.GraduationDate, NEW.CumulativeGPA,
+            CASE NEW.Status WHEN 'Graduated' THEN 'Auto-archived upon graduation'
+                            WHEN 'Suspended' THEN 'Auto-archived upon suspension'
+                            WHEN 'Dropped' THEN 'Auto-archived upon dropping'
+            END);
+END;
+
+-- =====================================================
+-- Course Triggers
+-- =====================================================
+
+-- Trigger: Update course statistics
+CREATE TRIGGER course_stats_update
+AFTER UPDATE OF NumericGrade, Status ON Enrollment
+WHEN NEW.Status = 'Completed' OR OLD.Status != NEW.Status OR OLD.NumericGrade != NEW.NumericGrade
+BEGIN
+    UPDATE Course
+    SET AverageGrade = (
+        SELECT COALESCE(ROUND(AVG(e.NumericGrade), 2), 0)
+        FROM Enrollment e
+        JOIN Section s ON e.SectionID = s.SectionID
+        WHERE s.CourseID = Course.CourseID AND e.Status = 'Completed' AND e.NumericGrade IS NOT NULL
+    ),
+    SuccessRate = (
+        SELECT COALESCE(ROUND(100.0 * SUM(CASE WHEN e.NumericGrade >= 60 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2), 0)
+        FROM Enrollment e
+        JOIN Section s ON e.SectionID = s.SectionID
+        WHERE s.CourseID = Course.CourseID AND e.Status = 'Completed'
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE CourseID = (SELECT s.CourseID FROM Section s WHERE s.SectionID = NEW.SectionID);
+END;
+
+-- Trigger: Update course statistics on delete
+CREATE TRIGGER course_stats_update_on_delete
+AFTER DELETE ON Enrollment
+BEGIN
+    UPDATE Course
+    SET AverageGrade = (
+        SELECT COALESCE(ROUND(AVG(e.NumericGrade), 2), 0)
+        FROM Enrollment e
+        JOIN Section s ON e.SectionID = s.SectionID
+        WHERE s.CourseID = Course.CourseID AND e.Status = 'Completed' AND e.NumericGrade IS NOT NULL
+    ),
+    SuccessRate = (
+        SELECT COALESCE(ROUND(100.0 * SUM(CASE WHEN e.NumericGrade >= 60 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2), 0)
+        FROM Enrollment e
+        JOIN Section s ON e.SectionID = s.SectionID
+        WHERE s.CourseID = Course.CourseID AND e.Status = 'Completed'
+    ),
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE CourseID = (SELECT s.CourseID FROM Section s WHERE s.SectionID = OLD.SectionID);
+END;
+
+-- Trigger: Cascading soft delete for courses
+CREATE TRIGGER course_cascading_soft_delete
+BEFORE UPDATE OF IsDeleted ON Course
+WHEN NEW.IsDeleted = 1 AND OLD.IsDeleted = 0
+BEGIN
+    UPDATE Section
+    SET Status = 'Cancelled', LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE CourseID = OLD.CourseID AND Status = 'Active';
+
+    INSERT INTO CourseDeletionLog (CourseID, CourseCode, DeletedBy)
+    VALUES (OLD.CourseID, OLD.CourseCode, NEW.DeletedBy);
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Course', OLD.CourseID, 'SOFT_DELETE', 'Active', 'Deleted',
+            'course_cascading_soft_delete', NEW.DeletedBy);
+END;
+
+-- =====================================================
+-- Course Prerequisite Triggers
+-- =====================================================
+
+-- Trigger: Prevent circular prerequisites
+CREATE TRIGGER prevent_circular_prerequisites
+BEFORE INSERT ON CoursePrerequisite
+BEGIN
+    WITH RECURSIVE prereq_chain(CourseID, PrerequisiteCourseID, Depth) AS (
+        SELECT cp.CourseID, cp.PrerequisiteCourseID, 1
+        FROM CoursePrerequisite cp
+        WHERE cp.CourseID = NEW.PrerequisiteCourseID
+        UNION ALL
+        SELECT cp.CourseID, cp.PrerequisiteCourseID, pc.Depth + 1
+        FROM CoursePrerequisite cp
+        JOIN prereq_chain pc ON cp.CourseID = pc.PrerequisiteCourseID
+        WHERE pc.Depth < (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'MAX_RECURSION_DEPTH')
+    )
+    SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM prereq_chain WHERE PrerequisiteCourseID = NEW.CourseID) THEN
+            RAISE(ABORT, 'Circular prerequisite detected for CourseID ' || NEW.CourseID)
+    END;
+END;
+
+-- =====================================================
+-- Classroom Triggers
+-- =====================================================
+
+-- Trigger: Enforce classroom capacity
+CREATE TRIGGER classroom_capacity_enforcement
+BEFORE UPDATE OF CurrentEnrollment ON Section
+WHEN NEW.RoomID IS NOT NULL AND NEW.CurrentEnrollment > (SELECT Capacity FROM Classroom WHERE RoomID = NEW.RoomID)
+BEGIN
+    SELECT RAISE(ABORT, 'Section enrollment would exceed classroom capacity');
+END;
+
+-- Trigger: Prevent room/schedule changes after enrollment
+CREATE TRIGGER prevent_room_schedule_change_after_enrollment
+BEFORE UPDATE OF RoomID, Schedule ON Section
+WHEN (NEW.RoomID != OLD.RoomID OR NEW.Schedule != OLD.Schedule)
+AND EXISTS (SELECT 1 FROM Enrollment WHERE SectionID = OLD.SectionID AND Status = 'Enrolled')
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot change room or schedule after students have enrolled');
+END;
+
+-- =====================================================
+-- Section Triggers
+-- =====================================================
+
+-- Trigger: Update enrollment count on insert
+CREATE TRIGGER section_enrollment_count_insert
+AFTER INSERT ON Enrollment
+WHEN NEW.Status = 'Enrolled'
+BEGIN
+    UPDATE Section
+    SET CurrentEnrollment = CurrentEnrollment + 1,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = NEW.SectionID;
+END;
+
+-- Trigger: Update enrollment count on delete
+CREATE TRIGGER section_enrollment_count_delete
+AFTER DELETE ON Enrollment
+WHEN OLD.Status = 'Enrolled'
+BEGIN
+    UPDATE Section
+    SET CurrentEnrollment = CurrentEnrollment - 1,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = OLD.SectionID;
+END;
+
+-- Trigger: Update enrollment count on status change (enrolled to other)
+CREATE TRIGGER section_enrollment_count_update
+AFTER UPDATE OF Status ON Enrollment
+WHEN OLD.Status = 'Enrolled' AND NEW.Status != 'Enrolled'
+BEGIN
+    UPDATE Section
+    SET CurrentEnrollment = CurrentEnrollment - 1,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = NEW.SectionID;
+END;
+
+-- Trigger: Update enrollment count on status change (other to enrolled)
+CREATE TRIGGER section_enrollment_count_update_to_enrolled
+AFTER UPDATE OF Status ON Enrollment
+WHEN OLD.Status != 'Enrolled' AND NEW.Status = 'Enrolled'
+BEGIN
+    UPDATE Section
+    SET CurrentEnrollment = CurrentEnrollment + 1,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = NEW.SectionID;
+END;
+
+-- Trigger: Set final enrollment on section completion
+CREATE TRIGGER section_set_final_enrollment
+AFTER UPDATE OF Status ON Section
+WHEN NEW.Status = 'Completed' AND OLD.Status != 'Completed'
+BEGIN
+    UPDATE Section
+    SET FinalEnrollment = CurrentEnrollment,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = NEW.SectionID;
+
+    INSERT INTO SectionArchive (SectionID, SectionCode, SectionName, Semester, AcademicYear,
+                                CourseID, TeacherID, RoomID, Schedule, MaxCapacity, FinalEnrollment, ArchiveReason)
+    SELECT SectionID, SectionCode, SectionName, at.Semester, at.AcademicYear,
+           CourseID, TeacherID, RoomID, Schedule, MaxCapacity, CurrentEnrollment, 'Auto-archived upon completion'
+    FROM Section s
+    JOIN AcademicTerm at ON s.TermID = at.TermID
+    WHERE s.SectionID = NEW.SectionID;
+END;
+
+-- Trigger: Auto-archive old sections
+CREATE TRIGGER section_auto_archive
+AFTER UPDATE ON Section
+BEGIN
+    UPDATE Section
+    SET IsArchived = 1,
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE Status = 'Completed'
+      AND IsArchived = 0
+      AND EXISTS (
+          SELECT 1 FROM AcademicTerm at
+          WHERE at.TermID = Section.TermID
+          AND at.EndDate < DATE('now', '-' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'AUTO_ARCHIVE_YEARS') || ' years')
+      );
+END;
+
+-- Trigger: Prevent teacher schedule conflict
+CREATE TRIGGER prevent_teacher_schedule_conflict
+BEFORE INSERT ON Section
+WHEN NEW.TeacherID IS NOT NULL AND NEW.RoomID IS NOT NULL AND EXISTS (
+    SELECT 1 FROM Section
+    WHERE TeacherID = NEW.TeacherID
+      AND TermID = NEW.TermID
+      AND Schedule = NEW.Schedule
+      AND SectionID != NEW.SectionID
+      AND Status = 'Active'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Teacher already has another section at the same time');
+END;
+
+-- Trigger: Prevent room schedule conflict
+CREATE TRIGGER prevent_room_schedule_conflict
+BEFORE INSERT ON Section
+WHEN NEW.RoomID IS NOT NULL AND EXISTS (
+    SELECT 1 FROM Section
+    WHERE RoomID = NEW.RoomID
+      AND TermID = NEW.TermID
+      AND Schedule = NEW.Schedule
+      AND SectionID != NEW.SectionID
+      AND Status = 'Active'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Room is already booked for another section at the same time');
+END;
+
+-- =====================================================
+-- Enrollment Grade Triggers
+-- =====================================================
+
+-- Trigger: Calculate grade points on insert
+CREATE TRIGGER calculate_grade_points_insert
+BEFORE INSERT ON Enrollment
+WHEN NEW.NumericGrade IS NOT NULL
+BEGIN
+    UPDATE Enrollment SET
+        LetterGrade = CASE
+            WHEN NEW.NumericGrade >= 96.5 THEN 'A+'
+            WHEN NEW.NumericGrade >= 92.5 THEN 'A'
+            WHEN NEW.NumericGrade >= 89.5 THEN 'A-'
+            WHEN NEW.NumericGrade >= 86.5 THEN 'B+'
+            WHEN NEW.NumericGrade >= 82.5 THEN 'B'
+            WHEN NEW.NumericGrade >= 79.5 THEN 'B-'
+            WHEN NEW.NumericGrade >= 76.5 THEN 'C+'
+            WHEN NEW.NumericGrade >= 72.5 THEN 'C'
+            WHEN NEW.NumericGrade >= 69.5 THEN 'C-'
+            WHEN NEW.NumericGrade >= 66.5 THEN 'D+'
+            WHEN NEW.NumericGrade >= 62.5 THEN 'D'
+            WHEN NEW.NumericGrade >= 59.5 THEN 'D-'
+            ELSE 'F'
+        END,
+        GradePoints = CASE
+            WHEN NEW.NumericGrade >= 96.5 THEN 4.3
+            WHEN NEW.NumericGrade >= 92.5 THEN 4.0
+            WHEN NEW.NumericGrade >= 89.5 THEN 3.7
+            WHEN NEW.NumericGrade >= 86.5 THEN 3.3
+            WHEN NEW.NumericGrade >= 82.5 THEN 3.0
+            WHEN NEW.NumericGrade >= 79.5 THEN 2.7
+            WHEN NEW.NumericGrade >= 76.5 THEN 2.3
+            WHEN NEW.NumericGrade >= 72.5 THEN 2.0
+            WHEN NEW.NumericGrade >= 69.5 THEN 1.7
+            WHEN NEW.NumericGrade >= 66.5 THEN 1.3
+            WHEN NEW.NumericGrade >= 62.5 THEN 1.0
+            WHEN NEW.NumericGrade >= 59.5 THEN 0.7
+            ELSE 0.0
+        END
+    WHERE EnrollmentID = NEW.EnrollmentID;
+END;
+
+-- Trigger: Recalculate grade points on update
+CREATE TRIGGER recalculate_grade_points_update
+BEFORE UPDATE OF NumericGrade ON Enrollment
+WHEN NEW.NumericGrade IS NOT NULL AND NEW.GradeLocked = 0
+BEGIN
+    UPDATE Enrollment SET
+        LetterGrade = CASE
+            WHEN NEW.NumericGrade >= 96.5 THEN 'A+'
+            WHEN NEW.NumericGrade >= 92.5 THEN 'A'
+            WHEN NEW.NumericGrade >= 89.5 THEN 'A-'
+            WHEN NEW.NumericGrade >= 86.5 THEN 'B+'
+            WHEN NEW.NumericGrade >= 82.5 THEN 'B'
+            WHEN NEW.NumericGrade >= 79.5 THEN 'B-'
+            WHEN NEW.NumericGrade >= 76.5 THEN 'C+'
+            WHEN NEW.NumericGrade >= 72.5 THEN 'C'
+            WHEN NEW.NumericGrade >= 69.5 THEN 'C-'
+            WHEN NEW.NumericGrade >= 66.5 THEN 'D+'
+            WHEN NEW.NumericGrade >= 62.5 THEN 'D'
+            WHEN NEW.NumericGrade >= 59.5 THEN 'D-'
+            ELSE 'F'
+        END,
+        GradePoints = CASE
+            WHEN NEW.NumericGrade >= 96.5 THEN 4.3
+            WHEN NEW.NumericGrade >= 92.5 THEN 4.0
+            WHEN NEW.NumericGrade >= 89.5 THEN 3.7
+            WHEN NEW.NumericGrade >= 86.5 THEN 3.3
+            WHEN NEW.NumericGrade >= 82.5 THEN 3.0
+            WHEN NEW.NumericGrade >= 79.5 THEN 2.7
+            WHEN NEW.NumericGrade >= 76.5 THEN 2.3
+            WHEN NEW.NumericGrade >= 72.5 THEN 2.0
+            WHEN NEW.NumericGrade >= 69.5 THEN 1.7
+            WHEN NEW.NumericGrade >= 66.5 THEN 1.3
+            WHEN NEW.NumericGrade >= 62.5 THEN 1.0
+            WHEN NEW.NumericGrade >= 59.5 THEN 0.7
+            ELSE 0.0
+        END
+    WHERE EnrollmentID = NEW.EnrollmentID;
+END;
+
+-- Trigger: Log grade history
+CREATE TRIGGER enrollment_grade_history
+AFTER UPDATE OF NumericGrade ON Enrollment
+WHEN OLD.NumericGrade != NEW.NumericGrade AND NEW.GradeLocked = 0
+BEGIN
+    INSERT INTO GradeHistory (EnrollmentID, OldNumericGrade, NewNumericGrade, OldLetterGrade, NewLetterGrade, ChangedBy)
+    VALUES (NEW.EnrollmentID, OLD.NumericGrade, NEW.NumericGrade, OLD.LetterGrade, NEW.LetterGrade,
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Enrollment', NEW.EnrollmentID, 'UPDATE',
+            'Grade: ' || COALESCE(CAST(OLD.NumericGrade AS TEXT), 'NULL'),
+            'Grade: ' || CAST(NEW.NumericGrade AS TEXT),
+            'enrollment_grade_history',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- Trigger: Auto-lock grade after completion
+CREATE TRIGGER enrollment_auto_lock_grade
+AFTER UPDATE OF Status ON Enrollment
+WHEN NEW.Status = 'Completed' AND OLD.Status != 'Completed'
+BEGIN
+    UPDATE Enrollment
+    SET GradeLocked = 1,
+        GradeLockDate = DATE('now', '+' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'GRADE_LOCK_DAYS') || ' days')
+    WHERE EnrollmentID = NEW.EnrollmentID;
+END;
+
+-- Trigger: Prevent grade change when locked
+CREATE TRIGGER enrollment_prevent_grade_change
+BEFORE UPDATE OF NumericGrade ON Enrollment
+WHEN NEW.GradeLocked = 1 OR (NEW.GradeLockDate IS NOT NULL AND NEW.GradeLockDate < DATE('now'))
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot change grade: Grade is locked');
+END;
+
+-- Trigger: Prevent grade for dropped/withdrawn enrollments
+CREATE TRIGGER enrollment_prevent_grade_for_dropped
+BEFORE UPDATE OF NumericGrade ON Enrollment
+WHEN NEW.Status IN ('Dropped', 'Withdrawn') AND NEW.NumericGrade IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot assign grade to dropped or withdrawn enrollment');
+END;
+
+-- Trigger: Auto-withdraw enrollments on student suspension
+CREATE TRIGGER enrollment_auto_withdraw_on_suspend
+AFTER UPDATE OF Status ON Student
+WHEN NEW.Status IN ('Suspended', 'Dropped') AND OLD.Status != NEW.Status
+BEGIN
+    UPDATE Enrollment
+    SET Status = 'Withdrawn', CompletedDate = DATE('now')
+    WHERE StudentID = NEW.StudentID AND Status = 'Enrolled';
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Student', NEW.StudentID, 'UPDATE', 'Enrollments active', 'All enrollments withdrawn',
+            'enrollment_auto_withdraw_on_suspend',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- Trigger: Set completion date
+CREATE TRIGGER enrollment_completed_date
+AFTER UPDATE OF Status ON Enrollment
+WHEN NEW.Status = 'Completed' AND OLD.Status != 'Completed'
+BEGIN
+    UPDATE Enrollment SET CompletedDate = DATE('now') WHERE EnrollmentID = NEW.EnrollmentID;
+END;
+
+-- Trigger: Detect rapid grade changes
+CREATE TRIGGER enrollment_detect_rapid_changes
+AFTER UPDATE OF NumericGrade ON Enrollment
+WHEN ABS(NEW.NumericGrade - OLD.NumericGrade) >
+     (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'GRADE_CHANGE_ALERT_THRESHOLD')
+AND (SELECT COUNT(*) FROM GradeHistory WHERE EnrollmentID = NEW.EnrollmentID
+     AND ChangedAt > DATETIME('now', '-' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'RAPID_GRADE_CHANGE_HOURS') || ' hours'))
+     >= (SELECT CAST(SettingValue AS INTEGER) FROM SystemSettings WHERE SettingKey = 'RAPID_GRADE_CHANGE_COUNT')
+BEGIN
+    INSERT INTO SecurityAlert (AlertType, Details)
+    VALUES ('RapidGradeChange',
+            'EnrollmentID ' || NEW.EnrollmentID || ': Grade changed from ' || OLD.NumericGrade || ' to ' || NEW.NumericGrade || ' rapidly');
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Enrollment', NEW.EnrollmentID, 'WARNING',
+            'Rapid grade change detected',
+            'From ' || OLD.NumericGrade || ' to ' || NEW.NumericGrade,
+            'enrollment_detect_rapid_changes',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- =====================================================
+-- Fee Triggers
+-- =====================================================
+
+-- Trigger: Auto-apply late fee
+CREATE TRIGGER fee_auto_late_fee
+AFTER UPDATE OF Status ON Fee
+WHEN NEW.Status = 'Overdue' AND OLD.Status != 'Overdue'
+BEGIN
+    UPDATE Fee
+    SET LateFee = ROUND(Amount * (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'LATE_FEE_PERCENTAGE') / 100.0, 2),
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE FeeID = NEW.FeeID;
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Fee', NEW.FeeID, 'UPDATE', 'Status: ' || OLD.Status, 'Status: Overdue, LateFee: ' || ROUND(NEW.Amount * (SELECT CAST(SettingValue AS REAL) FROM SystemSettings WHERE SettingKey = 'LATE_FEE_PERCENTAGE') / 100.0, 2),
+            'fee_auto_late_fee',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- Trigger: Auto-set overdue on insert
+CREATE TRIGGER fee_auto_overdue_insert
+AFTER INSERT ON Fee
+WHEN NEW.DueDate < DATE('now') AND NEW.Status IN ('Pending', 'Partial')
+BEGIN
+    UPDATE Fee
+    SET Status = 'Overdue', LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE FeeID = NEW.FeeID;
+END;
+
+-- Trigger: Auto-set overdue on update
+CREATE TRIGGER fee_auto_overdue_update
+AFTER UPDATE OF DueDate ON Fee
+WHEN NEW.DueDate < DATE('now') AND NEW.Status IN ('Pending', 'Partial')
+BEGIN
+    UPDATE Fee
+    SET Status = 'Overdue', LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE FeeID = NEW.FeeID;
+END;
+
+-- Trigger: Auto-generate next semester fee
+CREATE TRIGGER fee_auto_generate_next_semester
+AFTER UPDATE OF Status ON Fee
+WHEN NEW.Status = 'Paid' AND NEW.FeeType = 'Tuition'
+BEGIN
+    INSERT INTO Fee (StudentID, TermID, FeeType, Amount, DueDate, Status, LastModifiedBy)
+    VALUES (NEW.StudentID,
+            (SELECT TermID FROM AcademicTerm WHERE StartDate > DATE('now') ORDER BY StartDate ASC LIMIT 1),
+            'Tuition', NEW.Amount, DATE('now', '+6 months'), 'Pending',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Fee', NEW.FeeID, 'INSERT', 'NULL', 'Next semester tuition auto-generated',
+            'fee_auto_generate_next_semester',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- =====================================================
+-- Scholarship Triggers
+-- =====================================================
+
+-- Trigger: Dynamic scholarship adjustment based on GPA
+CREATE TRIGGER scholarship_dynamic_adjustment
+AFTER UPDATE OF CumulativeGPA ON Student
+BEGIN
+    -- Step 1: Update status based on new GPA
+    UPDATE Scholarship
+    SET EligibilityStatus = CASE
+        WHEN NEW.CumulativeGPA < (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'SCHOLARSHIP_GPA_THRESHOLD')
+             AND EligibilityStatus = 'Active' THEN 'Under Review'
+        WHEN NEW.CumulativeGPA >= (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'SCHOLARSHIP_GPA_THRESHOLD')
+             AND EligibilityStatus IN ('Under Review', 'Active') THEN 'Active'
+        ELSE EligibilityStatus
+    END,
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID;
+
+    -- Step 2: Apply amount adjustment for Active scholarships
+    UPDATE Scholarship
+    SET Amount = CASE
+        WHEN NEW.CumulativeGPA >= 4.0 THEN Amount * 1.1
+        WHEN NEW.CumulativeGPA >= 3.9 THEN Amount * 1.05
+        ELSE Amount
+    END,
+    LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE StudentID = NEW.StudentID
+      AND EligibilityStatus = 'Active';
+
+    -- Step 3: Revoke after review period (unchanged)
+    UPDATE Scholarship
+    SET EligibilityStatus = 'Revoked'
+    WHERE StudentID = NEW.StudentID
+      AND EligibilityStatus = 'Under Review'
+      AND NEW.CumulativeGPA < (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'SCHOLARSHIP_GPA_THRESHOLD')
+      AND LastModifiedDate < DATE('now', '-' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'SCHOLARSHIP_REVIEW_DAYS') || ' days');
+END;
+
+-- Trigger: Log scholarship history
+CREATE TRIGGER scholarship_history_log
+AFTER UPDATE OF Amount, EligibilityStatus ON Scholarship
+BEGIN
+    INSERT INTO ScholarshipHistory (ScholarshipID, StudentID, OldAmount, NewAmount, OldStatus, NewStatus)
+    VALUES (NEW.ScholarshipID, NEW.StudentID, OLD.Amount, NEW.Amount, OLD.EligibilityStatus, NEW.EligibilityStatus);
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Scholarship', NEW.ScholarshipID, 'UPDATE',
+            'Amount: ' || COALESCE(CAST(OLD.Amount AS TEXT), 'NULL') || ', Status: ' || COALESCE(OLD.EligibilityStatus, 'NULL'),
+            'Amount: ' || CAST(NEW.Amount AS TEXT) || ', Status: ' || NEW.EligibilityStatus,
+            'scholarship_history_log',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- =====================================================
+-- Assessment & StudentAssessment Triggers
+-- =====================================================
+
+-- Trigger: Prevent past due dates for assessments
+CREATE TRIGGER assessment_prevent_past_due_date
+BEFORE INSERT ON Assessment
+WHEN NEW.DueDate < DATE('now')
+BEGIN
+    SELECT RAISE(ABORT, 'Assessment due date cannot be in the past');
+END;
+
+-- Trigger: Check total assessment weight
+CREATE TRIGGER assessment_check_total_weight
+BEFORE INSERT ON Assessment
+BEGIN
+    SELECT CASE
+        WHEN (SELECT COALESCE(SUM(Weight), 0) + NEW.Weight FROM Assessment WHERE SectionID = NEW.SectionID) > 100 THEN
+            RAISE(ABORT, 'Total assessment weight cannot exceed 100% for a section')
+    END;
+END;
+
+-- Trigger: Recalculate final grade on assessment insert
+CREATE TRIGGER sa_recalculate_final_grade
+AFTER INSERT ON StudentAssessment
+BEGIN
+    UPDATE Enrollment SET
+        NumericGrade = (
+            SELECT ROUND(SUM(sa.Score * a.Weight / a.MaxScore) / NULLIF(SUM(a.Weight), 0) * 100, 2)
+            FROM StudentAssessment sa
+            JOIN Assessment a ON sa.AssessmentID = a.AssessmentID
+            WHERE sa.EnrollmentID = NEW.EnrollmentID
+              AND a.SectionID = (SELECT SectionID FROM Assessment WHERE AssessmentID = NEW.AssessmentID)
+              AND sa.Score IS NOT NULL
+        ),
+        GradeLocked = 0
+    WHERE EnrollmentID = NEW.EnrollmentID
+      AND GradeLocked = 0;
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Enrollment', NEW.EnrollmentID,
+            'GRADE_RECALC', 'Grade recalculated due to assessment', 'New grade calculated',
+            'sa_recalculate_final_grade',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- Trigger: Recalculate final grade on assessment update
+CREATE TRIGGER sa_recalculate_final_grade_update
+AFTER UPDATE OF Score ON StudentAssessment
+BEGIN
+    UPDATE Enrollment SET
+        NumericGrade = (
+            SELECT ROUND(SUM(sa.Score * a.Weight / a.MaxScore) / NULLIF(SUM(a.Weight), 0) * 100, 2)
+            FROM StudentAssessment sa
+            JOIN Assessment a ON sa.AssessmentID = a.AssessmentID
+            WHERE sa.EnrollmentID = NEW.EnrollmentID
+              AND a.SectionID = (SELECT SectionID FROM Assessment WHERE AssessmentID = NEW.AssessmentID)
+              AND sa.Score IS NOT NULL
+        ),
+        GradeLocked = 0
+    WHERE EnrollmentID = NEW.EnrollmentID
+      AND GradeLocked = 0;
+END;
+
+-- Trigger: Recalculate final grade on assessment delete
+CREATE TRIGGER sa_recalculate_final_grade_delete
+AFTER DELETE ON StudentAssessment
+BEGIN
+    UPDATE Enrollment SET
+        NumericGrade = (
+            SELECT ROUND(SUM(sa.Score * a.Weight / a.MaxScore) / NULLIF(SUM(a.Weight), 0) * 100, 2)
+            FROM StudentAssessment sa
+            JOIN Assessment a ON sa.AssessmentID = a.AssessmentID
+            WHERE sa.EnrollmentID = OLD.EnrollmentID
+              AND a.SectionID = (SELECT SectionID FROM Assessment WHERE AssessmentID = OLD.AssessmentID)
+              AND sa.Score IS NOT NULL
+        ),
+        GradeLocked = 0
+    WHERE EnrollmentID = OLD.EnrollmentID
+      AND GradeLocked = 0;
+END;
+
+-- Trigger: Prevent score exceeding max
+CREATE TRIGGER sa_prevent_score_exceed_max
+BEFORE INSERT ON StudentAssessment
+WHEN NEW.Score > (SELECT MaxScore FROM Assessment WHERE AssessmentID = NEW.AssessmentID)
+BEGIN
+    SELECT RAISE(ABORT, 'Score cannot exceed the assessment maximum score (' ||
+        (SELECT MaxScore FROM Assessment WHERE AssessmentID = NEW.AssessmentID) || ')');
+END;
+
+-- =====================================================
+-- Attendance Triggers
+-- =====================================================
+
+-- Trigger: Prevent future attendance dates
+CREATE TRIGGER attendance_prevent_future_date
+BEFORE INSERT ON Attendance
+WHEN NEW.Date > DATE('now')
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot insert attendance record with future date');
+END;
+
+-- =====================================================
+-- Teacher Rating Triggers
+-- =====================================================
+
+-- Trigger: Prevent rating without course completion
+CREATE TRIGGER prevent_rating_without_completion
+BEFORE INSERT ON TeacherRating
+WHEN NOT EXISTS (
+    SELECT 1 FROM Enrollment e
+    JOIN Section s ON e.SectionID = s.SectionID
+    WHERE e.StudentID = NEW.StudentID
+      AND s.TeacherID = NEW.TeacherID
+      AND e.Status = 'Completed'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Student cannot rate a teacher before completing a course with them');
+END;
+
+-- =====================================================
+-- WAITLIST MANAGEMENT
+-- =====================================================
+
+-- Trigger: Update waitlist count on insert
+CREATE TRIGGER waitlist_update_section_count_insert
+AFTER INSERT ON Waitlist
+BEGIN
+    UPDATE Section
+    SET WaitlistCount = (SELECT COUNT(*) FROM Waitlist WHERE SectionID = NEW.SectionID AND Status IN ('Waiting', 'Offered')),
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = NEW.SectionID;
+END;
+
+-- Trigger: Update waitlist count on status update
+CREATE TRIGGER waitlist_update_section_count_update
+AFTER UPDATE OF Status ON Waitlist
+BEGIN
+    UPDATE Section
+    SET WaitlistCount = (SELECT COUNT(*) FROM Waitlist WHERE SectionID = NEW.SectionID AND Status IN ('Waiting', 'Offered')),
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = NEW.SectionID;
+END;
+
+-- Trigger: Update waitlist count on delete
+CREATE TRIGGER waitlist_update_section_count_delete
+AFTER DELETE ON Waitlist
+BEGIN
+    UPDATE Section
+    SET WaitlistCount = (SELECT COUNT(*) FROM Waitlist WHERE SectionID = OLD.SectionID AND Status IN ('Waiting', 'Offered')),
+        LastModifiedDate = CURRENT_TIMESTAMP
+    WHERE SectionID = OLD.SectionID;
+END;
+
+-- Trigger: Consolidated waitlist management (promote next student when spot opens)
+CREATE TRIGGER waitlist_consolidated_management
+AFTER UPDATE OF CurrentEnrollment ON Section
+WHEN (SELECT CAST(SettingValue AS TEXT) FROM SystemSettings WHERE SettingKey = 'WAITLIST_ENABLED') = 'true'
+AND NEW.CurrentEnrollment < NEW.MaxCapacity
+AND EXISTS (SELECT 1 FROM Waitlist WHERE SectionID = NEW.SectionID AND Status = 'Waiting')
+BEGIN
+    UPDATE Section SET WaitlistCount = (
+        SELECT COUNT(*) FROM Waitlist WHERE SectionID = NEW.SectionID AND Status IN ('Waiting', 'Offered')
+    ) WHERE SectionID = NEW.SectionID;
+
+    UPDATE Waitlist
+    SET Status = 'Offered',
+        OfferedUntil = DATETIME('now', '+' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'WAITLIST_OFFER_HOURS') || ' hours'),
+        NotifiedAt = CURRENT_TIMESTAMP
+    WHERE WaitlistID = (
+        SELECT WaitlistID FROM Waitlist
+        WHERE SectionID = NEW.SectionID AND Status = 'Waiting'
+        ORDER BY Position ASC
+        LIMIT 1
+    );
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Section', NEW.SectionID, 'WAITLIST_PROMOTION',
+            'Waitlist promotion processed',
+            'Student promoted from waitlist',
+            'waitlist_consolidated_management',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- Trigger: Expire waitlist offers
+CREATE TRIGGER waitlist_expire_offers
+AFTER UPDATE ON Waitlist
+BEGIN
+    UPDATE Waitlist
+    SET Status = 'Expired'
+    WHERE Status = 'Offered' AND OfferedUntil < DATETIME('now');
+
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('Waitlist', NEW.WaitlistID, 'UPDATE', 'Offered', 'Expired',
+            'waitlist_expire_offers',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- =====================================================
+-- MATERIALIZED VIEW REFRESH TRIGGERS
+-- =====================================================
+
+-- Trigger: Refresh materialized student GPA report
+CREATE TRIGGER refresh_materialized_student_gpa
+AFTER UPDATE OF CumulativeGPA, SemesterGPA, TotalCreditsEarned, PerformanceFlag ON Student
+WHEN (SELECT TriggersEnabled FROM TriggerControl WHERE ControlID = 1) = 1
+BEGIN
+    DELETE FROM MaterializedStudentGPAReport WHERE StudentID = NEW.StudentID;
+    INSERT INTO MaterializedStudentGPAReport
+        (StudentID, StudentNumber, StudentName, Country, CurrentSemester,
+         CumulativeGPA, SemesterGPA, TotalCreditsEarned, CompletedCourses, HasOutstandingFees, PerformanceFlag, LastRefreshed)
+    VALUES (
+        NEW.StudentID, NEW.StudentNumber, NEW.FirstName || ' ' || NEW.LastName, NEW.Country,
+        NEW.CurrentSemester, NEW.CumulativeGPA, NEW.SemesterGPA, NEW.TotalCreditsEarned,
+        (SELECT COUNT(*) FROM Enrollment e WHERE e.StudentID = NEW.StudentID AND e.Status = 'Completed'),
+        NEW.HasOutstandingFees, NEW.PerformanceFlag, CURRENT_TIMESTAMP
+    );
+END;
+
+-- Trigger: Refresh materialized report on grade change
+CREATE TRIGGER refresh_materialized_on_grade_change
+AFTER UPDATE OF NumericGrade ON Enrollment
+WHEN (SELECT TriggersEnabled FROM TriggerControl WHERE ControlID = 1) = 1
+BEGIN
+    DELETE FROM MaterializedStudentGPAReport WHERE StudentID = NEW.StudentID;
+    INSERT INTO MaterializedStudentGPAReport
+        (StudentID, StudentNumber, StudentName, Country, CurrentSemester,
+         CumulativeGPA, SemesterGPA, TotalCreditsEarned, CompletedCourses, HasOutstandingFees, PerformanceFlag, LastRefreshed)
+    SELECT
+        s.StudentID, s.StudentNumber, s.FirstName || ' ' || s.LastName, s.Country,
+        s.CurrentSemester, s.CumulativeGPA, s.SemesterGPA, s.TotalCreditsEarned,
+        (SELECT COUNT(*) FROM Enrollment e WHERE e.StudentID = s.StudentID AND e.Status = 'Completed'),
+        s.HasOutstandingFees, s.PerformanceFlag, CURRENT_TIMESTAMP
+    FROM Student s WHERE s.StudentID = NEW.StudentID;
+END;
+
+-- =====================================================
+-- MAINTENANCE PROCEDURES
+-- =====================================================
+
+-- Trigger: Disable triggers during maintenance
+CREATE TRIGGER maintenance_disable_triggers
+BEFORE UPDATE OF MaintenanceMode ON TriggerControl
+WHEN NEW.MaintenanceMode = 1
+BEGIN
+    UPDATE TriggerControl SET TriggersEnabled = 0 WHERE ControlID = 1;
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('System', 1, 'WARNING', 'Triggers Enabled', 'Triggers Disabled for Maintenance',
+            'maintenance_disable_triggers',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- Trigger: Re-enable triggers after maintenance
+CREATE TRIGGER maintenance_enable_triggers
+AFTER UPDATE OF MaintenanceMode ON TriggerControl
+WHEN NEW.MaintenanceMode = 0 AND OLD.MaintenanceMode = 1
+BEGIN
+    UPDATE TriggerControl SET TriggersEnabled = 1 WHERE ControlID = 1;
+    INSERT INTO AuditLog (TableName, RecordID, Action, OldValue, NewValue, TriggerName, ChangedBy)
+    VALUES ('System', 1, 'WARNING', 'Triggers Disabled', 'Triggers Re-enabled',
+            'maintenance_enable_triggers',
+            COALESCE((SELECT CurrentUser FROM CurrentSession WHERE SessionID=1), 'SYSTEM'));
+END;
+
+-- =====================================================
+-- MATERIALIZED VIEW REFRESH ROUTINE (Manual or Scheduled)
+-- =====================================================
+
+-- Refresh all materialized views (call this after bulk changes)
+CREATE TEMP TRIGGER IF NOT EXISTS refresh_all_materialized_views
+INSTEAD OF INSERT ON dummy_refresh_view
+BEGIN
+    -- Refresh DepartmentPerformanceSummary
+    DELETE FROM DepartmentPerformanceSummary;
+    INSERT INTO DepartmentPerformanceSummary (DeptID, DeptName, TotalStudents, TotalCourses, AvgStudentGPA, GraduationRate, TotalBudgetUsed, LastUpdated)
+    SELECT
+        d.DeptID,
+        d.DeptName,
+        COUNT(DISTINCT s.StudentID) AS TotalStudents,
+        COUNT(DISTINCT c.CourseID) AS TotalCourses,
+        COALESCE(AVG(s.CumulativeGPA), 0) AS AvgStudentGPA,
+        COALESCE(100.0 * SUM(CASE WHEN s.Status = 'Graduated' THEN 1 ELSE 0 END) / NULLIF(COUNT(s.StudentID), 0), 0) AS GraduationRate,
+        COALESCE(SUM(d.BudgetUsed), 0) AS TotalBudgetUsed,
+        CURRENT_TIMESTAMP
+    FROM Department d
+    LEFT JOIN Student s ON d.DeptID = s.DepartmentID AND s.IsDeleted = 0
+    LEFT JOIN Course c ON d.DeptID = c.DepartmentID AND c.IsDeleted = 0
+    GROUP BY d.DeptID, d.DeptName;
+
+    -- Refresh MaterializedStudentGPAReport
+    DELETE FROM MaterializedStudentGPAReport;
+    INSERT INTO MaterializedStudentGPAReport
+        (StudentID, StudentNumber, StudentName, Country, CurrentSemester,
+         CumulativeGPA, SemesterGPA, TotalCreditsEarned, CompletedCourses, HasOutstandingFees, PerformanceFlag, LastRefreshed)
+    SELECT
+        s.StudentID, s.StudentNumber, s.FirstName || ' ' || s.LastName, s.Country,
+        s.CurrentSemester, s.CumulativeGPA, s.SemesterGPA, s.TotalCreditsEarned,
+        (SELECT COUNT(*) FROM Enrollment e WHERE e.StudentID = s.StudentID AND e.Status = 'Completed'),
+        s.HasOutstandingFees, s.PerformanceFlag, CURRENT_TIMESTAMP
+    FROM Student s
+    WHERE s.IsDeleted = 0;
+END;
+
+-- Create a dummy table to trigger the refresh routine
+CREATE TEMP TABLE IF NOT EXISTS dummy_refresh_view (id INTEGER);
+
+-- =====================================================
+-- CLEANUP PROCEDURES (Can be called manually or via external scheduler)
+-- =====================================================
+-- Clean up old notifications
+-- DELETE FROM Notification WHERE CreatedAt < DATE('now', '-' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'NOTIFICATION_RETENTION_DAYS') || ' days');
+
+-- Clean up old audit logs
+-- DELETE FROM AuditLog WHERE ChangedAt < DATE('now', '-' || (SELECT SettingValue FROM SystemSettings WHERE SettingKey = 'AUDIT_RETENTION_DAYS') || ' days');
+
+-- =====================================================
+-- INITIALIZATION: Ensure at least one AcademicTerm exists
+-- =====================================================
+INSERT OR IGNORE INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent)
+VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+
+-- =====================================================
+-- DATABASE VERIFICATION
+-- =====================================================
+SELECT '========================================' AS '';
+SELECT 'ENHANCED UNIVERSITY DATABASE v9.6 CREATED' AS '';
+SELECT '========================================' AS '';
+SELECT 'FEATURES INCLUDED IN v9.6:' AS '';
+SELECT '========================================' AS '';
+SELECT '✓ All fixes from v9.5 retained unchanged' AS '';
+SELECT '✓ StudentAssessment: StudentID FK replaced with EnrollmentID FK' AS '';
+SELECT '✓ StudentAssessment: UNIQUE constraint updated to (EnrollmentID, AssessmentID)' AS '';
+SELECT '✓ All assessment grade recalculation triggers updated for EnrollmentID' AS '';
+SELECT '✓ Fee: TermID FK added - fees now scoped to academic term' AS '';
+SELECT '✓ Scholarship: TermID FK, StartDate, EndDate added' AS '';
+SELECT '✓ Student: CurrentTermID removed - derived from AcademicTerm WHERE IsCurrent=1' AS '';
+SELECT '✓ student_performance_update trigger updated to derive TermID' AS '';
+SELECT '✓ student_semester_gpa_on_completion trigger updated to derive TermID' AS '';
+SELECT '✓ enrollment_max_sections_check trigger updated to derive TermID' AS '';
+SELECT '✓ fee_auto_generate_next_semester trigger updated to include TermID' AS '';
+SELECT '========================================' AS '';
+
+SELECT 'Current System Configuration:' AS '';
+SELECT SettingKey || ' = ' || SettingValue AS Config FROM SystemSettings;
+SELECT '========================================' AS '';
+
+SELECT 'System Mode: ' || Environment FROM SystemMode WHERE ModeID = 1;
+SELECT '========================================' AS '';
+SELECT 'Database v9.6 ready for production. Aligned with ER Diagram v10.0.' AS '';
+SELECT '========================================' AS '';

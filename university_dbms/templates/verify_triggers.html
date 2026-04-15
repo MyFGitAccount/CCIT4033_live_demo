@@ -1,0 +1,140 @@
+<!-- templates/verify_triggers.html -->
+{% extends 'base.html' %}
+
+{% block title %}Verify Triggers{% endblock %}
+{% block page_title %}Trigger Verification Dashboard{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> This page verifies that all database triggers are working correctly. 
+    Each test validates a specific trigger functionality.
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-check-circle"></i> Trigger Test Results</h5>
+            </div>
+            <div class="card-body">
+                {% for test in trigger_tests %}
+                <div class="card mb-3 trigger-test-card trigger-pass">
+                    <div class="card-body">
+                        <h6>{{ test.name }}</h6>
+                        <p class="text-muted small">{{ test.description }}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge {% if 'PASS' in test.result %}bg-success{% else %}bg-secondary{% endif %}">
+                                {{ test.result }}
+                            </span>
+                            {% if test.data %}
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter }}">
+                                View Details
+                            </button>
+                            {% endif %}
+                        </div>
+                        {% if test.data %}
+                        <div class="collapse mt-2" id="collapse{{ forloop.counter }}">
+                            <pre class="small bg-light p-2 rounded">{{ test.data }}</pre>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-bolt"></i> Recent Trigger Executions</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Time</th><th>Table</th><th>Action</th><th>Trigger</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for log in recent_trigger_logs %}
+                            <tr>
+                                <td>{{ log.ChangedAt|slice:":19" }}</td>
+                                <td>{{ log.TableName }}</td>
+                                <td><span class="badge bg-secondary">{{ log.Action }}</span></td>
+                                <td><code>{{ log.TriggerName }}</code></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center">No trigger executions found</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header bg-warning">
+                <h5><i class="fas fa-flask"></i> Trigger Test Scenarios</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <a href="{% url 'test_waitlist_scenario' %}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-list-alt"></i> Test Waitlist Management
+                        <small class="text-muted d-block">Verify automatic waitlist addition and promotion</small>
+                    </a>
+                    <a href="{% url 'test_prerequisite_scenario' %}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-code-branch"></i> Test Prerequisite Enforcement
+                        <small class="text-muted d-block">Verify prerequisite checks prevent invalid enrollment</small>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-list"></i> Active Triggers Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="alert alert-success">
+                            <strong>Academic Triggers</strong><br>
+                            - Academic Standing Update<br>
+                            - GPA Calculation<br>
+                            - Semester Progression
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="alert alert-info">
+                            <strong>Enrollment Triggers</strong><br>
+                            - Prerequisite Check<br>
+                            - Schedule Conflict<br>
+                            - Max Credits/Sections
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="alert alert-warning">
+                            <strong>Financial Triggers</strong><br>
+                            - Late Fee Auto-apply<br>
+                            - Scholarship Adjustment<br>
+                            - Fee Status Updates
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="alert alert-secondary">
+                            <strong>Audit Triggers</strong><br>
+                            - Grade Change Logging<br>
+                            - Security Alerts<br>
+                            - Immutable Audit Trail
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

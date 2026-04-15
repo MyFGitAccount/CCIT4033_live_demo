@@ -1,0 +1,30 @@
+# render.yaml
+services:
+  - type: web
+    name: university-dbms
+    runtime: python
+    repo: https://github.com/YOUR_USERNAME/university_dbms
+    plan: free
+    region: oregon
+    buildCommand: |
+      pip install -r requirements.txt
+      python manage.py migrate
+      python manage.py collectstatic --noinput
+    startCommand: gunicorn university_dbms.wsgi:application
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_SETTINGS_MODULE
+        value: university_dbms.settings_production
+      - key: DEBUG
+        value: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: university-db
+          property: connectionString
+
+  - type: database
+    name: university-db
+    plan: free
+    databaseName: university_db
+    ipAllowList: [] # Allow only internal connections

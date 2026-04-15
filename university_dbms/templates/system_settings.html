@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}System Settings{% endblock %}
+{% block page_title %}System Configuration{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> System settings control the behavior of the database triggers and business rules.
+    Changes take effect immediately.
+</div>
+
+<div class="row">
+    {% for category, settings in categorized_settings.items %}
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cog"></i> {{ category }}</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Setting</th><th>Value</th><th>Description</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            {% for setting in settings %}
+                            <tr>
+                                <td><code>{{ setting.SettingKey }}</code></td>
+                                <td>
+                                    <form method="post" style="display: inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="setting_key" value="{{ setting.SettingKey }}">
+                                        <input type="text" name="setting_value" value="{{ setting.SettingValue }}" 
+                                               class="form-control form-control-sm" style="width: 120px; display: inline-block;">
+                                        <button type="submit" class="btn btn-sm btn-primary">Update</button>
+                                    </form>
+                                </td>
+                                <td><small>{{ setting.Description|default:"-" }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-warning">
+                <h5><i class="fas fa-exclamation-triangle"></i> Important Settings</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="alert alert-info">
+                            <strong>Academic Rules</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Max Credits/Semester: <code>{{ settings|first|default:"18" }}</code></li>
+                                <li>Min Attendance: <code>75%</code></li>
+                                <li>Graduation Min GPA: <code>2.0</code></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="alert alert-warning">
+                            <strong>Financial Rules</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Late Fee: <code>5%</code></li>
+                                <li>Scholarship GPA Threshold: <code>3.5</code></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="alert alert-success">
+                            <strong>System Rules</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Grade Lock Days: <code>30</code></li>
+                                <li>Audit Retention: <code>730 days</code></li>
+                                <li>Waitlist Enabled: <code>true</code></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,155 @@
+<!-- templates/dashboard.html -->
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary card-stats">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Total Students</h6>
+                        <h2 class="mb-0">{{ stats.total_students|default:0 }}</h2>
+                    </div>
+                    <div><i class="fas fa-users fa-2x opacity-50"></i></div>
+                </div>
+                <small>Active: {{ stats.active_students|default:0 }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning card-stats">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">On Probation</h6>
+                        <h2 class="mb-0">{{ stats.probation_students|default:0 }}</h2>
+                    </div>
+                    <div><i class="fas fa-exclamation-triangle fa-2x opacity-50"></i></div>
+                </div>
+                <small>Need academic support</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success card-stats">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Active Sections</h6>
+                        <h2 class="mb-0">{{ stats.active_sections|default:0 }}</h2>
+                    </div>
+                    <div><i class="fas fa-chalkboard fa-2x opacity-50"></i></div>
+                </div>
+                <small>Current term</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info card-stats">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Enrollments</h6>
+                        <h2 class="mb-0">{{ stats.current_enrollments|default:0 }}</h2>
+                    </div>
+                    <div><i class="fas fa-book-open fa-2x opacity-50"></i></div>
+                </div>
+                <small>This semester</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-history"></i> Recent Audit Logs</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Time</th><th>Table</th><th>Action</th><th>Trigger</th><th>User</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for log in recent_logs|slice:":10" %}
+                            <tr>
+                                <td>{{ log.ChangedAt|slice:":19" }}</td>
+                                <td>{{ log.TableName }}</td>
+                                <td><span class="badge bg-secondary">{{ log.Action }}</span></td>
+                                <td><code>{{ log.TriggerName }}</code></td>
+                                <td>{{ log.ChangedBy }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-center">No audit logs found</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-trophy"></i> Top Students by GPA</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for student in top_students %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ student.Name }}</strong><br>
+                            <small class="text-muted">{{ student.StudentNumber }}</small>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">GPA: {{ student.CumulativeGPA }}</span>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">No student data available</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cog"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-2">
+                        <a href="{% url 'add_student' %}" class="btn btn-outline-primary w-100">
+                            <i class="fas fa-user-plus"></i> Add Student
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{% url 'enroll_student' %}" class="btn btn-outline-success w-100">
+                            <i class="fas fa-user-graduate"></i> Enroll Student
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{% url 'add_grade' %}" class="btn btn-outline-warning w-100">
+                            <i class="fas fa-graduation-cap"></i> Enter Grades
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{% url 'verify_triggers' %}" class="btn btn-outline-info w-100">
+                            <i class="fas fa-bolt"></i> Verify Triggers
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

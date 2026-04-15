@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Grade{% endblock %}
+{% block page_title %}Add Student Grade{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-graduation-cap"></i> Grade Entry Form</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">Enrollment *</label>
+                        <select name="enrollment_id" class="form-control" required>
+                            <option value="">Select Student/Course</option>
+                            {% for enrollment in enrollments %}
+                            <option value="{{ enrollment.EnrollmentID }}">
+                                {{ enrollment.StudentName }} - {{ enrollment.CourseCode }} {{ enrollment.CourseName }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Numeric Grade (0-100) *</label>
+                        <input type="number" name="numeric_grade" class="form-control" required step="0.01" min="0" max="100">
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        Letter grade and grade points will be calculated automatically based on the numeric grade.
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Grade</button>
+                    <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

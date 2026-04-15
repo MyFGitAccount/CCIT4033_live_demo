@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+
+{% block title %}Test Prerequisites{% endblock %}
+{% block page_title %}Prerequisite Enforcement Test{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> This test demonstrates the prerequisite enforcement trigger.
+    Students cannot enroll in courses without completing required prerequisites.
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="fas fa-code-branch"></i> Active Prerequisite Rules</h5>
+            </div>
+            <div class="card-body">
+                {% if prerequisites %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Course</th><th>Requires</th><th>Min Grade</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for prereq in prerequisites %}
+                            <tr>
+                                <td><strong>{{ prereq.CourseCode }}</strong><br><small>{{ prereq.CourseName }}</small></td>
+                                <td>{{ prereq.PrereqCode }}</td>
+                                <td>{{ prereq.MinGradeRequired }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i> No prerequisite rules defined in the system.
+                    <br><br>
+                    <strong>To test prerequisites, first add some:</strong>
+                    <ol class="mt-2">
+                        <li>Create courses (e.g., CS101, CS201)</li>
+                        <li>Add prerequisite relationship: CS201 requires CS101</li>
+                    </ol>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-user-check"></i> Students Who Completed Prerequisites</h5>
+            </div>
+            <div class="card-body">
+                {% if eligible_students %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Student ID</th><th>Name</th><th>Completed Prereqs</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for student in eligible_students %}
+                            <tr>
+                                <td>{{ student.StudentNumber }}</td>
+                                <td>{{ student.Name }}</td>
+                                <td><span class="badge bg-success">Eligible</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> No students have completed prerequisite courses yet.
+                    <br><br>
+                    <strong>To test:</strong>
+                    <ol class="mt-2">
+                        <li>Enroll a student in a prerequisite course</li>
+                        <li>Complete the course with a passing grade</li>
+                        <li>Try enrolling the student in the advanced course</li>
+                    </ol>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-warning">
+                <h5><i class="fas fa-flask"></i> Test Enrollment with Prerequisites</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'enroll_student' %}">
+                    {% csrf_token %}
+                    <div class="row">
+                        <div class="col-md-5">
+                            <label class="form-label">Select Student</label>
+                            <select name="student_id" class="form-control" required>
+                                <option value="">Choose student...</option>
+                                {% for student in eligible_students %}
+                                <option value="{{ student.StudentID }}">{{ student.StudentNumber }} - {{ student.Name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Select Course with Prerequisites</label>
+                            <select name="section_id" class="form-control" required>
+                                <option value="">Choose course...</option>
+                                {% for prereq in prerequisites %}
+                                <option value="{{ prereq.CourseID }}">{{ prereq.CourseCode }} - {{ prereq.CourseName }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary d-block w-100">
+                                <i class="fas fa-test"></i> Test Enrollment
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                
+                <div class="alert alert-secondary mt-3">
+                    <strong><i class="fas fa-lightbulb"></i> Expected Behavior:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li><strong>If student has completed prerequisites:</strong> Enrollment succeeds</li>
+                        <li><strong>If student has NOT completed prerequisites:</strong> Trigger blocks enrollment with error message</li>
+                        <li><strong>During grace period (first {{ grace_days|default:"14" }} days of term):</strong> Student can take prerequisites concurrently</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-database"></i> SQL to Add Test Prerequisites</h5>
+            </div>
+            <div class="card-body">
+                <pre class="bg-dark text-white p-3 rounded"><code>
+-- Add sample courses
+INSERT INTO Course (CourseCode, CourseName, Credits, DepartmentID, IsActive, IsDeleted) VALUES
+('CS101', 'Introduction to Programming', 3, 1, 1, 0),
+('CS201', 'Data Structures', 3, 1, 1, 0),
+('CS301', 'Database Systems', 3, 1, 1, 0);
+
+-- Add prerequisite: CS201 requires CS101
+INSERT INTO CoursePrerequisite (CourseID, PrerequisiteCourseID, MinGradeRequired)
+SELECT c1.CourseID, c2.CourseID, 60
+FROM Course c1, Course c2
+WHERE c1.CourseCode = 'CS201' AND c2.CourseCode = 'CS101';
+
+-- Add prerequisite: CS301 requires CS201
+INSERT INTO CoursePrerequisite (CourseID, PrerequisiteCourseID, MinGradeRequired)
+SELECT c1.CourseID, c2.CourseID, 60
+FROM Course c1, Course c2
+WHERE c1.CourseCode = 'CS301' AND c2.CourseCode = 'CS201';
+
+-- Create a section for CS201
+INSERT INTO Section (SectionCode, SectionName, TermID, CourseID, MaxCapacity, Status)
+SELECT 'CS201A', 'Section A', TermID, CourseID, 30, 'Active'
+FROM Course, AcademicTerm
+WHERE Course.CourseCode = 'CS201' AND AcademicTerm.IsCurrent = 1;
+
+-- Enroll a student in CS201 (will be blocked if prerequisites not met)
+-- INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (student_id, section_id, 'Enrolled');
+                </code></pre>
+                <button onclick="copyToClipboard(this)" class="btn btn-sm btn-secondary mt-2">
+                    <i class="fas fa-copy"></i> Copy SQL
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(button) {
+    var codeBlock = button.previousElementSibling;
+    var text = codeBlock.innerText;
+    navigator.clipboard.writeText(text).then(function() {
+        button.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(function() {
+            button.innerHTML = '<i class="fas fa-copy"></i> Copy SQL';
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}
+

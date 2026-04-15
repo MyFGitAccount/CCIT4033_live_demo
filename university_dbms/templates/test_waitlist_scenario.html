@@ -1,0 +1,79 @@
+<!-- templates/test_waitlist_scenario.html -->
+{% extends 'base.html' %}
+
+{% block title %}Test Waitlist{% endblock %}
+{% block page_title %}Waitlist Management Test{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> This test demonstrates the waitlist trigger functionality.
+    When a section is full, students are automatically added to the waitlist.
+</div>
+
+{% if section %}
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5>Section Information</h5>
+    </div>
+    <div class="card-body">
+        <p><strong>Section:</strong> {{ section.code }}</p>
+        <p><strong>Capacity:</strong> {{ section.capacity }}</p>
+        <p><strong>Current Enrollment:</strong> {{ section.current }}</p>
+        <p><strong>Available Seats:</strong> {{ section.capacity|add:section.current|add:section.current }}</p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5>Test Waitlist Enrollment</h5>
+    </div>
+    <div class="card-body">
+        <p>To test the waitlist functionality:</p>
+        <ol>
+            <li>Enroll students until the section reaches capacity</li>
+            <li>Additional enrollments will be added to the waitlist</li>
+            <li>When a spot opens, the next waitlisted student is automatically promoted</li>
+        </ol>
+        
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label class="form-label">Select Student to Enroll</label>
+                <select name="student_id" class="form-control" required>
+                    {% for student in students %}
+                    <option value="{{ student.0 }}">{{ student.1 }} - {{ student.2 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-warning">
+                <i class="fas fa-list-alt"></i> Test Enrollment (Will Use Waitlist if Full)
+            </button>
+        </form>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle"></i> No sections available for testing. Please add a section first.
+</div>
+{% endif %}
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5>Current Waitlist Status</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr><th>Section</th><th>Student</th><th>Position</th><th>Status</th><th>Requested At</th></tr>
+                </thead>
+                <tbody>
+                    {% with 'SELECT * FROM Waitlist ORDER BY RequestedAt DESC LIMIT 10' as waitlist_query %}
+                    <!-- Waitlist data would be displayed here -->
+                    {% endwith %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
