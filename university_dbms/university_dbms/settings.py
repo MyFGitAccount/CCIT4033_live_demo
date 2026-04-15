@@ -4,8 +4,8 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-university-dbms-secret-key-change-in-production'
-DEBUG = True
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+DEBUG = False
+ALLOWED_HOSTS = ['fe2o.pythonanywhere.com', 'localhost', '127.0.0.1']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -21,6 +21,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # ADDED - Required for static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -50,6 +51,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'university_dbms.wsgi.application'
 
 # SQLite with custom configuration for triggers
+# IMPORTANT: REMOVED WAL mode - incompatible with PythonAnywhere's NFS
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -58,9 +60,8 @@ DATABASES = {
             'init_command': """
                 PRAGMA foreign_keys = ON;
                 PRAGMA recursive_triggers = ON;
-                PRAGMA journal_mode = WAL;
-                PRAGMA synchronous = NORMAL;
             """,
+            'timeout': 20,  # Added timeout to handle database locks
         },
     }
 }
@@ -77,8 +78,13 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
+# Static files configuration for PythonAnywhere
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+
+# WhiteNoise storage for compressed static files
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
@@ -87,3 +93,11 @@ CRISPY_TEMPLATE_PACK = "bootstrap5"
 # Session settings
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_AGE = 3600
+
+# CSRF Settings for PythonAnywhere
+CSRF_TRUSTED_ORIGINS = ['https://fe2o.pythonanywhere.com']
+
+# Security Settings for Production
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
