@@ -1,74 +1,283 @@
 {% extends 'base.html' %}
-{% load custom_filters %}
 
-{% block title %}Custom SQL Query{% endblock %}
-{% block page_title %}Execute Custom Query{% endblock %}
+{% block title %}SQLite3 CLI{% endblock %}
+{% block page_title %}SQLite3 Command Line{% endblock %}
+
+{% block extra_css %}
+<style>
+    .cli-terminal {
+        background-color: #0C0C0C;
+        color: #CCCCCC;
+        font-family: 'Courier New', 'Monaco', monospace;
+        font-size: 13px;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .cli-header {
+        background: #1a1a1a;
+        padding: 8px 15px;
+        border-bottom: 1px solid #333;
+        display: flex;
+        align-items: center;
+    }
+
+    .cli-title {
+        color: #aaa;
+        font-size: 12px;
+    }
+
+    .cli-output {
+        padding: 15px;
+        max-height: 500px;
+        overflow-y: auto;
+        background-color: #0C0C0C;
+        font-family: 'Courier New', 'Monaco', monospace;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    .sql-line {
+        color: #7ec8e0;
+        margin: 5px 0 10px 0;
+        white-space: pre-wrap;
+        font-weight: bold;
+    }
+
+    .output-line {
+        margin: 2px 0;
+        white-space: pre;
+    }
+
+    .success-line {
+        color: #6fcf97;
+    }
+
+    .error-line {
+        color: #e74c3c;
+        font-weight: bold;
+    }
+
+    .header-line {
+        color: #f1c40f;
+    }
+
+    .separator-line {
+        color: #555;
+    }
+
+    .sql-input {
+        background-color: #1a1a1a;
+        border: 1px solid #333;
+        color: #7ec8e0;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        padding: 15px;
+        border-radius: 5px;
+    }
+
+    .sql-input:focus {
+        background-color: #1a1a1a;
+        color: #7ec8e0;
+        border-color: #5dade2;
+        outline: none;
+    }
+
+    .cli-output::-webkit-scrollbar {
+        width: 8px;
+    }
+    .cli-output::-webkit-scrollbar-track {
+        background: #1a1a1a;
+    }
+    .cli-output::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-md-12">
-        <div class="card">
-            <div class="card-header bg-warning">
-                <h5><i class="fas fa-exclamation-triangle"></i> Security Notice</h5>
-            </div>
-            <div class="card-body">
-                <div class="alert alert-warning">
-                    <i class="fas fa-shield-alt"></i> Only SELECT queries are allowed for security reasons.
-                    All other operations (INSERT, UPDATE, DELETE) must use the dedicated forms.
+        <!-- CLI Terminal -->
+        <div class="cli-terminal">
+            <div class="cli-header">
+                <div class="cli-title">
+                    SQLite3 - {{ sqlite_version }}
+                </div>
+                <div class="ms-auto">
+                    <span class="badge bg-secondary">{{ sqlite_version }}</span>
                 </div>
             </div>
+
+            <div class="cli-output" id="cliOutput">
+                {% for line in output_lines %}
+                    {% if line.type == 'sql' %}
+                        <div class="sql-line">{{ line.content }}</div>
+                    {% elif line.type == 'success' %}
+                        <div class="success-line">{{ line.content }}</div>
+                    {% elif line.type == 'error' %}
+                        <div class="error-line">{{ line.content }}</div>
+                    {% elif line.type == 'header' %}
+                        <div class="header-line">{{ line.content }}</div>
+                    {% elif line.type == 'separator' %}
+                        <div class="separator-line">{{ line.content }}</div>
+                    {% elif line.type == 'row' %}
+                        <div class="output-line">{{ line.content }}</div>
+                    {% else %}
+                        <div class="output-line">{{ line.content }}</div>
+                    {% endif %}
+                {% empty %}
+                    <div>SQLite version {{ sqlite_version }}</div>
+                    <div>Enter ".help" for usage hints.</div>
+                    <div>Connected to: university.db</div>
+                    <div><br></div>
+                    <div>sqlite&gt; _</div>
+                {% endfor %}
+            </div>
         </div>
-        
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-code"></i> SQL Editor</h5>
+
+        <!-- SQL Input -->
+        <div class="card mt-4">
+            <div class="card-header bg-dark text-white">
+                <h6><i class="fas fa-terminal"></i> SQL Input</h6>
             </div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" id="sqlForm">
                     {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label">SQL Query</label>
-                        <textarea name="sql_query" class="form-control font-monospace" rows="6" placeholder="SELECT * FROM Student WHERE CumulativeGPA > 3.5 LIMIT 10">{% if sql_query %}{{ sql_query }}{% endif %}</textarea>
+                    <textarea name="sql_query" id="sqlQuery" class="form-control sql-input"
+                              rows="8" placeholder="-- Test prerequisite enforcement
+DELETE FROM Enrollment;
+DELETE FROM Section;
+DELETE FROM CoursePrerequisite;
+DELETE FROM Course;
+DELETE FROM Teacher;
+DELETE FROM Student;
+DELETE FROM Department;
+DELETE FROM AcademicTerm;
+DELETE FROM Classroom;
+
+INSERT INTO Department (DeptID, DeptName, DeptCode) VALUES (1, 'Computer Science', 'CS');
+INSERT INTO Teacher (TeacherID, FirstName, LastName, Email, DepartmentID, Status) VALUES (1, 'John', 'Smith', 'john@university.edu', 1, 'Active');
+INSERT INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent) VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+INSERT INTO Classroom (RoomID, RoomNumber, Building, Capacity) VALUES (1, '101', 'Main Hall', 30);
+INSERT INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (1, 'CS101', 'Programming', 3, 1);
+INSERT INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (2, 'CS201', 'Data Structures', 3, 1);
+INSERT INTO CoursePrerequisite (CourseID, PrerequisiteCourseID, MinGradeRequired) VALUES (2, 1, 60.0);
+INSERT INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status) VALUES (1, 'STU001', 'Alice', 'Johnson', 'ID001', 'USA', 'alice@student.edu', 1, 'Active');
+INSERT INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (1, 'CS101-A', 'CS101 Section', 1, 1, 1, 1, 'Monday 10:00', 30);
+INSERT INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (2, 'CS201-A', 'CS201 Section', 1, 2, 1, 1, 'Wednesday 10:00', 25);
+
+SELECT 'Attempting enrollment without prerequisite:' AS Status;
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 2, 'Enrolled');
+
+SELECT 'Completing prerequisite CS101:' AS Status;
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 1, 'Enrolled');
+UPDATE Enrollment SET Status = 'Completed', NumericGrade = 85 WHERE StudentID = 1 AND SectionID = 1;
+
+SELECT 'Attempting enrollment after prerequisite:' AS Status;
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 2, 'Enrolled');
+SELECT * FROM Enrollment WHERE StudentID = 1;">{% if sql_query %}{{ sql_query }}{% endif %}</textarea>
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-success btn-sm">
+                            <i class="fas fa-play"></i> Execute
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearQuery()">
+                            <i class="fas fa-eraser"></i> Clear
+                        </button>
+                        <button type="button" class="btn btn-info btn-sm" onclick="loadPrerequisiteTest()">
+                            <i class="fas fa-code-branch"></i> Prerequisite Test
+                        </button>
+                        <button type="button" class="btn btn-warning btn-sm" onclick="location.reload()">
+                            <i class="fas fa-trash"></i> Clear Terminal
+                        </button>
                     </div>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-play"></i> Execute Query
-                    </button>
                 </form>
             </div>
         </div>
-        
-        {% if query_executed %}
-        <div class="card mt-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5><i class="fas fa-table"></i> Results</h5>
-                <span class="badge bg-info">{{ row_count }} rows returned</span>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped table-sm">
-                        <thead>
-                            <tr>
-                                {% for col in columns %}
-                                <th>{{ col }}</th>
-                                {% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in results %}
-                            <tr>
-                                {% for col in columns %}
-                                <td>{{ row|get_item:col|default:"NULL" }}</td>
-                                {% endfor %}
-                            </tr>
-                            {% empty %}
-                            <tr><td colspan="{{ columns|length }}" class="text-center">No results found</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+
+        <!-- Quick Reference -->
+        <div class="row mt-3">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h6><i class="fas fa-table"></i> Tables ({{ tables|length }})</h6>
+                    </div>
+                    <div class="card-body" style="max-height: 150px; overflow-y: auto;">
+                        {% for table in tables %}
+                        <button class="btn btn-sm btn-outline-primary m-1" onclick="selectTable('{{ table }}')">
+                            📁 {{ table }}
+                        </button>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>
-        {% endif %}
     </div>
 </div>
+
+<script>
+function clearQuery() {
+    document.getElementById('sqlQuery').value = '';
+    document.getElementById('sqlQuery').focus();
+}
+
+function selectTable(tableName) {
+    document.getElementById('sqlQuery').value = 'SELECT * FROM ' + tableName + ' LIMIT 20;';
+    document.getElementById('sqlQuery').focus();
+}
+
+function loadPrerequisiteTest() {
+    document.getElementById('sqlQuery').value = `-- Test Prerequisite Enforcement
+DELETE FROM Enrollment;
+DELETE FROM Section;
+DELETE FROM CoursePrerequisite;
+DELETE FROM Course;
+DELETE FROM Teacher;
+DELETE FROM Student;
+DELETE FROM Department;
+DELETE FROM AcademicTerm;
+DELETE FROM Classroom;
+
+INSERT INTO Department (DeptID, DeptName, DeptCode) VALUES (1, 'Computer Science', 'CS');
+INSERT INTO Teacher (TeacherID, FirstName, LastName, Email, DepartmentID, Status) VALUES (1, 'John', 'Smith', 'john@university.edu', 1, 'Active');
+INSERT INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent) VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+INSERT INTO Classroom (RoomID, RoomNumber, Building, Capacity) VALUES (1, '101', 'Main Hall', 30);
+INSERT INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (1, 'CS101', 'Programming', 3, 1);
+INSERT INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (2, 'CS201', 'Data Structures', 3, 1);
+INSERT INTO CoursePrerequisite (CourseID, PrerequisiteCourseID, MinGradeRequired) VALUES (2, 1, 60.0);
+INSERT INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status) VALUES (1, 'STU001', 'Alice', 'Johnson', 'ID001', 'USA', 'alice@student.edu', 1, 'Active');
+INSERT INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (1, 'CS101-A', 'CS101 Section', 1, 1, 1, 1, 'Monday 10:00', 30);
+INSERT INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (2, 'CS201-A', 'CS201 Section', 1, 2, 1, 1, 'Wednesday 10:00', 25);
+
+SELECT '=== Test 1: Enrollment without prerequisite ===' as '';
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 2, 'Enrolled');
+
+SELECT '=== Test 2: Complete prerequisite ===' as '';
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 1, 'Enrolled');
+UPDATE Enrollment SET Status = 'Completed', NumericGrade = 85 WHERE StudentID = 1 AND SectionID = 1;
+
+SELECT '=== Test 3: Enrollment after prerequisite ===' as '';
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 2, 'Enrolled');
+
+SELECT '=== Final Enrollment Status ===' as '';
+SELECT * FROM Enrollment WHERE StudentID = 1;`;
+}
+
+function scrollToBottom() {
+    const output = document.getElementById('cliOutput');
+    if (output) {
+        output.scrollTop = output.scrollHeight;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', scrollToBottom);
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('sqlForm').submit();
+    }
+});
+window.addEventListener('load', scrollToBottom);
+</script>
 {% endblock %}

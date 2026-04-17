@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}Connection Info{% endblock %}
+{% block page_title %}Network Access Information{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header bg-success text-white">
+        <h5><i class="fas fa-network-wired"></i> Server Connection Details</h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            <h6>Share this information with users:</h6>
+            <hr>
+            <p><strong>📍 Local Network Access:</strong><br>
+            <code>http://{{ local_ip }}:{{ port }}</code></p>
+            
+            <p><strong>🌐 Internet Access (if port forwarded):</strong><br>
+            <code>http://{{ public_ip }}:{{ port }}</code></p>
+            
+            <p><strong>💻 On this server:</strong><br>
+            <code>http://localhost:{{ port }}</code></p>
+        </div>
+        
+        <div class="alert alert-warning">
+            <h6><i class="fas fa-exclamation-triangle"></i> Important Notes:</h6>
+            <ul>
+                <li>Users must be on the SAME NETWORK to access via Local IP</li>
+                <li>Keep this terminal window running at all times</li>
+                <li>Your firewall must allow port {{ port }}</li>
+                <li>For internet access, configure port forwarding on your router</li>
+            </ul>
+        </div>
+        
+        <div class="mt-3">
+            <h6>Quick Share:</h6>
+            <button class="btn btn-primary" onclick="copyToClipboard('http://{{ local_ip }}:{{ port }}')">
+                <i class="fas fa-copy"></i> Copy Local URL
+            </button>
+            <button class="btn btn-success" onclick="generateQRCode('http://{{ local_ip }}:{{ port }}')">
+                <i class="fas fa-qrcode"></i> Generate QR Code
+            </button>
+        </div>
+        
+        <div id="qrcode" class="mt-3 text-center" style="display:none;"></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text);
+    alert('URL copied: ' + text);
+}
+
+function generateQRCode(url) {
+    var qrDiv = document.getElementById('qrcode');
+    qrDiv.style.display = 'block';
+    qrDiv.innerHTML = '';
+    new QRCode(qrDiv, {
+        text: url,
+        width: 200,
+        height: 200
+    });
+}
+</script>
+{% endblock %}

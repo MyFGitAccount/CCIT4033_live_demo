@@ -1,11 +1,30 @@
-# university_dbms/settings.py
+# university_dbms/settings.py - NETWORK ACCESS VERSION
 from pathlib import Path
 import os
+import socket
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Get your local IP address automatically
+def get_local_ip():
+    try:
+        # Connect to external server to get local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "0.0.0.0"
+
+LOCAL_IP = get_local_ip()
+
 SECRET_KEY = 'django-insecure-university-dbms-secret-key-change-in-production'
-DEBUG = False
-ALLOWED_HOSTS = ['fe2o.pythonanywhere.com', 'localhost', '127.0.0.1']
+DEBUG = True  # Keep True for network access (but be careful!)
+ALLOWED_HOSTS = ['*']  # Allow ALL hosts - anyone can connect
+
+# Or more specifically:
+# ALLOWED_HOSTS = [LOCAL_IP, 'localhost', '127.0.0.1', '0.0.0.0', '*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -21,7 +40,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # ADDED - Required for static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -50,8 +68,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'university_dbms.wsgi.application'
 
-# SQLite with custom configuration for triggers
-# IMPORTANT: REMOVED WAL mode - incompatible with PythonAnywhere's NFS
+# SQLite configuration
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -61,7 +78,7 @@ DATABASES = {
                 PRAGMA foreign_keys = ON;
                 PRAGMA recursive_triggers = ON;
             """,
-            'timeout': 20,  # Added timeout to handle database locks
+            'timeout': 20,
         },
     }
 }
@@ -78,26 +95,16 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files configuration for PythonAnywhere
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
-
-# WhiteNoise storage for compressed static files
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
-# Session settings
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_AGE = 3600
 
-# CSRF Settings for PythonAnywhere
-CSRF_TRUSTED_ORIGINS = ['https://fe2o.pythonanywhere.com']
-
-# Security Settings for Production
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'DENY'
+# CSRF Settings for network access
+CSRF_TRUSTED_ORIGINS = [f'http://{LOCAL_IP}:8000', 'http://localhost:8000', 'http://127.0.0.1:8000']

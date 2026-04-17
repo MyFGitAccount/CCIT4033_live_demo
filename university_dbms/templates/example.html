@@ -1,0 +1,492 @@
+{% extends 'base.html' %}
+{% block content %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>University DBMS · Complete Test Suite + Budget Trigger Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(145deg, #eef2f7 0%, #dee5ed 100%);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            padding: 28px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(120deg, #0a2b3e, #1c6e8f);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: -0.5px;
+        }
+        .header p {
+            color: #2c5368;
+            margin-top: 8px;
+            font-weight: 500;
+        }
+        .badge-suite {
+            display: inline-block;
+            background: #1f5e3a;
+            color: white;
+            border-radius: 40px;
+            padding: 4px 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-top: 12px;
+        }
+
+        /* Layout grid */
+        .tests-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(580px, 1fr));
+            gap: 24px;
+        }
+
+        /* Card styling */
+        .test-card {
+            background: white;
+            border-radius: 1.5rem;
+            box-shadow: 0 12px 24px -12px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            transition: 0.1s ease;
+            border: 1px solid rgba(255,255,255,0.6);
+        }
+        .card-header {
+            background: #0f2c3b;
+            color: white;
+            padding: 14px 20px;
+            font-weight: 700;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 3px solid #ffb74d;
+        }
+        .card-header .icon {
+            font-size: 1.3rem;
+        }
+        .card-body {
+            padding: 18px 20px 20px;
+            background: #fefefe;
+        }
+        .desc {
+            background: #eef3fc;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 0.8rem;
+            color: #1e4a6b;
+            margin-bottom: 16px;
+            border-left: 4px solid #2c7da0;
+            font-weight: 500;
+        }
+        .sql-code {
+            background: #0e1e2a;
+            color: #e2f0fa;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.75rem;
+            padding: 16px;
+            border-radius: 1rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.45;
+            margin-bottom: 16px;
+            border: 1px solid #2d4a62;
+        }
+        .copy-btn {
+            background: #1e4a6b;
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 8px 18px;
+            border-radius: 60px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: 0.2s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .copy-btn:hover {
+            background: #0f3b55;
+            transform: translateY(-1px);
+        }
+        .toast-msg {
+            margin-left: 12px;
+            font-size: 0.7rem;
+            color: #2e7d64;
+            font-weight: 500;
+        }
+        .footer {
+            margin-top: 42px;
+            background: #0f2c3b;
+            color: #cbd5e6;
+            padding: 18px;
+            text-align: center;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+        }
+        hr {
+            margin: 12px 0;
+        }
+        @media (max-width: 700px) {
+            .tests-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🧪 University DBMS · Complete Test Suite</h1>
+        <p>Single‑statement ready: Academic Term, Prerequisites, Budget Trigger, Waitlist, Scholarships & more</p>
+        <div class="badge-suite">⚡ BUDGET TRIGGER · GPA DYNAMICS · ENROLLMENT CONSTRAINTS</div>
+    </div>
+
+    <div class="tests-grid">
+        <!-- TEST 1: Academic Term single current -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">📅</span> TEST 1: Single Current Term</div>
+            <div class="card-body">
+                <div class="desc">🔍 (UR:Academic Integrity)Ensures only ONE AcademicTerm can be current at any time. After insert/update trigger resets others.</div>
+                <div class="sql-code" id="sql1">
+-- Step 1: Clean previous terms
+DELETE FROM AcademicTerm;
+DELETE FROM sqlite_sequence;
+
+-- Step 2: Insert Fall term as current
+INSERT INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent, IsActive)
+VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1, 1);
+
+-- Step 3: Insert Spring term (not current)
+INSERT INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent, IsActive)
+VALUES (2, 'Spring', '2025-2026', '2026-01-15', '2026-05-10', '2026-01-28', 0, 1);
+
+-- Step 4: Verify before change
+SELECT 'Before: Term1=' || (SELECT IsCurrent FROM AcademicTerm WHERE TermID=1) || ', Term2=' || (SELECT IsCurrent FROM AcademicTerm WHERE TermID=2) AS Status;
+
+-- Step 5: Update Spring to current → trigger auto-clears Fall
+UPDATE AcademicTerm SET IsCurrent = 1 WHERE TermID = 2;
+
+-- Step 6: Verify only Spring is current
+SELECT 'After:  Term1=' || (SELECT IsCurrent FROM AcademicTerm WHERE TermID=1) || ', Term2=' || (SELECT IsCurrent FROM AcademicTerm WHERE TermID=2) AS Status;
+                </div>
+                <button class="copy-btn" data-target="sql1">📋 COPY STATEMENTS (run sequentially)</button>
+                <span class="toast-msg" id="toast1"></span>
+            </div>
+        </div>
+
+        <!-- TEST 2: Prerequisite Check with Grace Period -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">📚</span> TEST 2: Prerequisite Enforcement</div>
+            <div class="card-body">
+                <div class="desc">📌 (UR:Academic Progress)Prevents enrollment if prerequisite not completed. Grace period allows same-term co-enrollment until AddDropDeadline.</div>
+                <div class="sql-code" id="sql2">
+-- Setup base data (run once)
+INSERT OR REPLACE INTO Department (DeptID, DeptName, DeptCode) VALUES (1, 'Computer Science', 'CS');
+INSERT OR REPLACE INTO Teacher (TeacherID, FirstName, LastName, Email, DepartmentID, Status) VALUES (1, 'John', 'Smith', 'john@uni.edu', 1, 'Active');
+INSERT OR REPLACE INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent) VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+INSERT OR REPLACE INTO Classroom (RoomID, RoomNumber, Building, Capacity) VALUES (1, '101', 'Main', 30);
+INSERT OR REPLACE INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (1, 'CS101', 'Programming', 3, 1);
+INSERT OR REPLACE INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (2, 'CS201', 'Data Structures', 3, 1);
+INSERT OR REPLACE INTO CoursePrerequisite (CourseID, PrerequisiteCourseID, MinGradeRequired) VALUES (2, 1, 60.0);
+INSERT OR REPLACE INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status) VALUES (1, 'STU001', 'Alice', 'Johnson', 'ID001', 'USA', 'alice@edu', 1, 'Active');
+INSERT OR REPLACE INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (1, 'CS101-A', 'CS101 Sec', 1, 1, 1, 1, 'Mon 10:00', 30);
+INSERT OR REPLACE INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (2, 'CS201-A', 'CS201 Sec', 1, 2, 1, 1, 'Wed 10:00', 25);
+
+-- This will FAIL (no prerequisite)
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 2, 'Enrolled');
+
+-- Complete prerequisite
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 1, 'Enrolled');
+UPDATE Enrollment SET Status = 'Completed', NumericGrade = 85 WHERE StudentID = 1 AND SectionID = 1;
+
+-- This will SUCCEED now
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 2, 'Enrolled');
+SELECT COUNT(*) AS EnrollmentCount FROM Enrollment WHERE StudentID = 1 AND SectionID = 2;
+                </div>
+                <button class="copy-btn" data-target="sql2">📋 COPY TEST 2</button>
+                <span class="toast-msg" id="toast2"></span>
+            </div>
+        </div>
+
+
+
+        <!-- TEST 3: Budget Trigger (Hard Stop) ⭐ NEW BUDGET TEST -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">💰</span>(UR:Financial Control) TEST 3: Department Budget Constraint</div>
+            <div class="card-body">
+                <div class="desc">⛔(UR:Financial Control) TRIGGER: dept_budget_hard_stop prevents BudgetUsed from exceeding Budget. Raises explicit error.</div>
+                <div class="sql-code" id="sql4">
+-- Clean & prepare department with strict budget
+DELETE FROM Department WHERE DeptID = 99;
+INSERT INTO Department (DeptID, DeptName, DeptCode, Budget, BudgetUsed) VALUES (99, 'BudgetTestDept', 'BTD', 100000, 0);
+
+-- Check initial budget
+SELECT DeptName, Budget, BudgetUsed FROM Department WHERE DeptID = 99;
+
+-- Valid update (within limit)
+UPDATE Department SET BudgetUsed = 50000 WHERE DeptID = 99;
+SELECT 'After using 50k: BudgetUsed = ' || BudgetUsed FROM Department WHERE DeptID = 99;
+
+-- ❌ This will TRIGGER error: Budget would be exceeded (attempts to set BudgetUsed > Budget)
+UPDATE Department SET BudgetUsed = BudgetUsed + 60000 WHERE DeptID = 99;
+
+-- Alternative: try to exceed directly
+UPDATE Department SET BudgetUsed = 150000 WHERE DeptID = 99;
+                </div>
+                <button class="copy-btn" data-target="sql4">📋 COPY BUDGET TEST</button>
+                <span class="toast-msg" id="toast4"></span>
+            </div>
+        </div>
+
+        <!-- TEST 4: Outstanding Fees Block Enrollment -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">💸</span> TEST 4: Fee Overdue Blocks Enrollment</div>
+            <div class="card-body">
+                <div class="desc">🚫 (Financial Integrity) Student with HasOutstandingFees = 1 cannot enroll. Trigger enrollment_fees_check raises error.</div>
+                <div class="sql-code" id="sql5">
+-- Setup student with outstanding fee
+INSERT OR REPLACE INTO Department (DeptID, DeptName, DeptCode) VALUES (1, 'CS', 'CS');
+INSERT OR REPLACE INTO Teacher (TeacherID, FirstName, LastName, Email, DepartmentID, Status) VALUES (1, 'John', 'Smith', 'john@uni.edu', 1, 'Active');
+INSERT OR REPLACE INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent) VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+INSERT OR REPLACE INTO Classroom (RoomID, RoomNumber, Building, Capacity) VALUES (1, '101', 'Main', 30);
+INSERT OR REPLACE INTO Course (CourseID, CourseCode, CourseName, Credits, DepartmentID) VALUES (1, 'CS101', 'Prog', 3, 1);
+INSERT OR REPLACE INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity) VALUES (1, 'CS101-A', 'SecA', 1, 1, 1, 1, 'Mon 10:00', 30);
+INSERT OR REPLACE INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status, HasOutstandingFees) VALUES (5, 'STU005', 'Emma', 'Wilson', 'ID005', 'AU', 'emma@edu', 1, 'Active', 1);
+INSERT OR REPLACE INTO Fee (StudentID, TermID, FeeType, Amount, DueDate, Status) VALUES (5, 1, 'Library', 200, '2025-09-20', 'Pending');
+
+-- Enrollment fails
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (5, 1, 'Enrolled');
+
+-- Pay fee
+UPDATE Fee SET Status = 'Paid', PaidAmount = 200, PaidDate = DATE('now') WHERE StudentID = 5;
+-- Now enrollment should succeed
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (5, 1, 'Enrolled');
+SELECT COUNT(*) AS EnrolledCount FROM Enrollment WHERE StudentID = 5;
+                </div>
+                <button class="copy-btn" data-target="sql5">📋 COPY TEST 4</button>
+                <span class="toast-msg" id="toast5"></span>
+            </div>
+        </div>
+
+        <!-- TEST 5: Auto-Late Fee Trigger -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">⏰</span> TEST 5: Auto Late Fee Trigger</div>
+            <div class="card-body">
+                <div class="desc">⚙️ (Financial Automation) When Fee status becomes 'Overdue' trigger calculates LateFee = Amount * LATE_FEE_PERCENTAGE / 100</div>
+                <div class="sql-code" id="sql6">
+SELECT 'LATE_FEE_PERCENTAGE = ' || SettingValue FROM SystemSettings WHERE SettingKey = 'LATE_FEE_PERCENTAGE';
+
+INSERT OR REPLACE INTO Department (DeptID, DeptName, DeptCode) VALUES (1, 'CS', 'CS');
+INSERT OR REPLACE INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent) VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+INSERT OR REPLACE INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status) VALUES (3, 'STU003', 'Carol', 'Brown', 'ID003', 'UK', 'carol@edu', 1, 'Active');
+
+INSERT INTO Fee (StudentID, TermID, FeeType, Amount, DueDate, Status) VALUES (3, 1, 'Tuition', 5000, '2025-09-15', 'Pending');
+-- Update to Overdue triggers late fee
+UPDATE Fee SET Status = 'Overdue' WHERE StudentID = 3 AND FeeType = 'Tuition';
+SELECT 'LateFee applied: ' || LateFee FROM Fee WHERE StudentID = 3;
+                </div>
+                <button class="copy-btn" data-target="sql6">📋 COPY TEST 5</button>
+                <span class="toast-msg" id="toast6"></span>
+            </div>
+        </div>
+
+        <!-- TEST 6: Dynamic Scholarship Adjustment -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">🎓</span> TEST 7: Scholarship GPA Trigger</div>
+            <div class="card-body">
+                <div class="desc">📈 (Student Incentives) Updates scholarship eligibility & amount based on CumulativeGPA (threshold 3.5, bonus above 3.9).</div>
+                <div class="sql-code" id="sql7">
+INSERT OR REPLACE INTO Department (DeptID, DeptName, DeptCode) VALUES (1, 'CS', 'CS');
+INSERT OR REPLACE INTO AcademicTerm (TermID, Semester, AcademicYear, StartDate, EndDate, AddDropDeadline, IsCurrent) VALUES (1, 'Fall', '2025-2026', '2025-09-01', '2025-12-15', '2025-09-14', 1);
+INSERT OR REPLACE INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status, CumulativeGPA) VALUES (4, 'STU004', 'David', 'Lee', 'ID004', 'USA', 'david@edu', 1, 'Active', 3.9);
+INSERT OR REPLACE INTO Scholarship (StudentID, TermID, ScholarshipName, Amount, StartDate, EndDate, EligibilityStatus) VALUES (4, 1, 'Dean Scholarship', 3000, '2025-09-01', '2026-08-31', 'Active');
+
+-- GPA drops below threshold
+UPDATE Student SET CumulativeGPA = 3.4 WHERE StudentID = 4;
+SELECT 'After drop to 3.4 → Status: ' || EligibilityStatus FROM Scholarship WHERE StudentID = 4;
+
+-- GPA increases to 4.0 (bonus amount)
+UPDATE Student SET CumulativeGPA = 4.0 WHERE StudentID = 4;
+SELECT 'After 4.0 → Status: ' || EligibilityStatus || ', Amount: ' || Amount FROM Scholarship WHERE StudentID = 4;
+                </div>
+                <button class="copy-btn" data-target="sql7">📋 COPY TEST 6</button>
+                <span class="toast-msg" id="toast7"></span>
+            </div>
+        </div>
+
+        <!-- TEST 7: Waitlist auto-add on full section -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">⏳</span> TEST 7: Waitlist Enrollment Trigger</div>
+            <div class="card-body">
+                <div class="desc">🔄 (Fair Access) If section is full, trigger adds student to waitlist & aborts enrollment. Promotes when spot opens.</div>
+                <div class="sql-code" id="sql8">
+-- Section capacity = 1 for demo
+INSERT OR REPLACE INTO Section (SectionID, SectionCode, SectionName, TermID, CourseID, TeacherID, RoomID, Schedule, MaxCapacity, CurrentEnrollment) VALUES (99, 'WAIT-DEMO', 'Waitlist Test', 1, 1, 1, 1, 'Fri 09:00', 1, 1);
+INSERT OR REPLACE INTO Student (StudentID, StudentNumber, FirstName, LastName, NationalID, Country, Email, DepartmentID, Status) VALUES (98, 'WSTU01', 'Wait', 'List', 'WL99', 'CA', 'wait@edu', 1, 'Active');
+
+-- Try to enroll when full -> auto waitlist + enrollment aborted
+INSERT INTO Enrollment (StudentID, SectionID, Status) VALUES (98, 99, 'Enrolled');
+
+-- Check waitlist entry
+SELECT StudentID, SectionID, Position, Status FROM Waitlist WHERE SectionID = 99;
+                </div>
+                <button class="copy-btn" data-target="sql8">📋 COPY TEST 7</button>
+                <span class="toast-msg" id="toast8"></span>
+            </div>
+        </div>
+
+        <!-- TEST 8: Grade Lock & Recalculation -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">🔒</span> TEST 8: Grade Lock & History</div>
+            <div class="card-body">
+                <div class="desc">📝 (Academic Integrity) Numeric grade update auto-calculates letter grade & grade points. Completed courses lock grade.</div>
+                <div class="sql-code" id="sql9">
+-- Setup enrollment
+INSERT OR REPLACE INTO Enrollment (EnrollmentID, StudentID, SectionID, Status, NumericGrade) VALUES (999, 1, 1, 'Enrolled', NULL);
+-- Update grade (auto letter + points)
+UPDATE Enrollment SET NumericGrade = 91.5 WHERE EnrollmentID = 999;
+SELECT LetterGrade, GradePoints, NumericGrade FROM Enrollment WHERE EnrollmentID = 999;
+-- Mark completed → auto lock
+UPDATE Enrollment SET Status = 'Completed' WHERE EnrollmentID = 999;
+-- This will now fail (grade locked)
+UPDATE Enrollment SET NumericGrade = 95 WHERE EnrollmentID = 999;
+                </div>
+                <button class="copy-btn" data-target="sql9">📋 COPY TEST 8</button>
+                <span class="toast-msg" id="toast9"></span>
+            </div>
+        </div>
+
+        <!-- TEST 9: Attendance Update & Future Date Block -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">📆</span> TEST 9: Attendance Triggers</div>
+            <div class="card-body">
+                <div class="desc">✅ (Student Monitoring) Updates student AttendancePercentage; prevents future dates.</div>
+                <div class="sql-code" id="sql10">
+-- Setup base enrollment
+INSERT OR REPLACE INTO Enrollment (StudentID, SectionID, Status) VALUES (1, 1, 'Enrolled');
+INSERT INTO Attendance (StudentID, SectionID, Date, Status) VALUES (1, 1, DATE('now'), 'Present');
+INSERT INTO Attendance (StudentID, SectionID, Date, Status) VALUES (1, 1, DATE('now', '-1 day'), 'Late');
+INSERT INTO Attendance (StudentID, SectionID, Date, Status) VALUES (1, 1, DATE('now', '-2 days'), 'Absent');
+
+SELECT 'Attendance % = ' || AttendancePercentage FROM Student WHERE StudentID = 1;
+
+-- This should FAIL (future date)
+INSERT INTO Attendance (StudentID, SectionID, Date, Status) VALUES (1, 1, DATE('now', '+1 day'), 'Present');
+                </div>
+                <button class="copy-btn" data-target="sql10">📋 COPY TEST 9</button>
+                <span class="toast-msg" id="toast10"></span>
+            </div>
+        </div>
+
+        <!-- TEST 10: Graduation Audit View -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">🎓</span> TEST 10: Graduation Eligibility</div>
+            <div class="card-body">
+                <div class="desc">📊 (Graduation Readiness) Uses GraduationAudit view to show credits, GPA shortfall, missing required courses.</div>
+                <div class="sql-code" id="sql11">
+-- Sample query: graduation readiness
+SELECT StudentName, TotalCreditsEarned, GraduationThreshold, CumulativeGPA,
+       GraduationEligibility, CreditsRemaining
+FROM GraduationAudit
+WHERE Status IN ('Active', 'Academic Probation')
+LIMIT 8;
+                </div>
+                <button class="copy-btn" data-target="sql11">📋 COPY TEST 10</button>
+                <span class="toast-msg" id="toast11"></span>
+            </div>
+        </div>
+
+        <!-- TEST 11: Teacher Rating Completion Check -->
+        <div class="test-card">
+            <div class="card-header"><span class="icon">⭐</span> TEST 11: Teacher Rating Constraint</div>
+            <div class="card-body">
+                <div class="desc">✅ (Quality Assurance) Prevents rating unless student completed a course with that teacher.</div>
+                <div class="sql-code" id="sql12">
+-- This will fail if student hasn't completed a course with teacher
+INSERT INTO TeacherRating (TeacherID, StudentID, TermID, Rating) VALUES (1, 99, 1, 4.5);
+-- First complete course then rating allowed
+INSERT INTO Enrollment (StudentID, SectionID, Status, NumericGrade) VALUES (99, 1, 'Completed', 88);
+INSERT INTO TeacherRating (TeacherID, StudentID, TermID, Rating, Review) VALUES (1, 99, 1, 4.9, 'Great!');
+                </div>
+                <button class="copy-btn" data-target="sql12">📋 COPY TEST 11</button>
+                <span class="toast-msg" id="toast12"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        🧪 <strong>Complete Test Suite</strong> — Each block contains ready-to-run SQL statements with inline comments.
+        Copy & paste into your single‑statement executor (or run sequentially). Budget trigger, waitlist, GPA recalculation, grade lock, scholarship dynamics and prerequisites are all active.
+    </div>
+</div>
+
+<script>
+    (function() {
+        const copyButtons = document.querySelectorAll('.copy-btn');
+
+        function showToast(toastId, message, isError = false) {
+            const el = document.getElementById(toastId);
+            if (!el) return;
+            el.innerText = message;
+            el.style.color = isError ? '#c0392b' : '#1e7e5e';
+            setTimeout(() => {
+                el.innerText = '';
+            }, 2000);
+        }
+
+        async function copyToClipboard(text, toastId) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast(toastId, '✓ Copied to clipboard!');
+            } catch (err) {
+                // fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast(toastId, '✓ Copied (fallback)');
+            }
+        }
+
+        copyButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.getAttribute('data-target');
+                if (!targetId) return;
+                const codeElement = document.getElementById(targetId);
+                if (!codeElement) return;
+                let sqlText = codeElement.innerText || codeElement.textContent;
+                sqlText = sqlText.trim();
+                let toastId = targetId.replace('sql', 'toast');
+                copyToClipboard(sqlText, toastId);
+            });
+        });
+    })();
+</script>
+</body>
+</html>
+{% endblock %}
+
